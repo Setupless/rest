@@ -19,8 +19,8 @@ function loadConfig(env = process.env): AppConfig {
     throw Error("DATABASE_PATH is required and must end in .sqlite or .db");
   }
 
-  if (Number.isNaN(port) || port < 1 || port > 65535) {
-    throw Error("PORT must be between 1 and 65535 if present");
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw Error("PORT must be an integer between 1 and 65535 if present");
   }
 
   return {

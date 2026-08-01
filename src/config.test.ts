@@ -18,4 +18,10 @@ describe("loadConfig", () => {
       "DATABASE_PATH is required and must end in .sqlite or .db",
     );
   });
+
+  it("rejects a fractional port", () => {
+    expect(() =>
+      loadConfig({ DATABASE_PATH: ":memory:", PORT: "3000.5" }),
+    ).toThrow("PORT must be an integer between 1 and 65535 if present");
+  });
 });
