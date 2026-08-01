@@ -13,7 +13,8 @@ function loadConfig(env = process.env): AppConfig {
 
   if (
     databasePath !== ":memory:" &&
-    (!databasePath.endsWith(".sqlite") || !databasePath.endsWith(".db"))
+    !databasePath.endsWith(".sqlite") &&
+    !databasePath.endsWith(".db")
   ) {
     throw Error("DATABASE_PATH is required and must end in .sqlite or .db");
   }
