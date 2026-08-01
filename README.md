@@ -1,15 +1,12 @@
-# setupless/rest
+# Setupless/rest
 
-To install dependencies:
+A lightweight, PostgREST-inspired REST API for SQLite, built with Bun and Elysia.
 
-```bash
-bun install
-```
+## Getting Started
 
-To run:
+1. Install dependencies with `bun install`.
+2. Copy `.env.example` to `.env`.
+3. Set `DATABASE_PATH` and, optionally, change `PORT`, which defaults to `3000`.
+4. Run the development server with `bun run dev`.
 
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.3.14. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+To run the server without watch mode, use `bun run start`.
