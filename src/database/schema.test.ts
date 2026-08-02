@@ -139,4 +139,114 @@ describe("loadDatabaseSchema", () => {
       cleanupTestDatabase(testDatabase);
     }
   });
+
+  it("excludes virtual-table shadow tables and hidden columns", () => {
+    const testDatabase = createTestDatabase();
+
+    try {
+      testDatabase.database.exec(
+        "CREATE VIRTUAL TABLE documents USING fts5(title, body)",
+      );
+
+      const schema = loadDatabaseSchema(testDatabase.database);
+
+      expect(schema.getResource("documents")).toEqual({
+        name: "documents",
+        type: "table",
+        columns: ["title", "body"].map((name) => ({
+          name,
+          declaredType: "",
+          nullable: true,
+          defaultValue: null,
+        })),
+        primaryKey: [],
+      });
+      expect(schema.getResource("documents_data")).toBeUndefined();
+      expect(schema.getResource("documents_idx")).toBeUndefined();
+      expect(schema.getResource("documents_content")).toBeUndefined();
+      expect(schema.getResource("documents_docsize")).toBeUndefined();
+      expect(schema.getResource("documents_config")).toBeUndefined();
+    } finally {
+      cleanupTestDatabase(testDatabase);
+    }
+  });
+
+  it("includes virtual and stored generated columns", () => {
+    const testDatabase = createTestDatabase();
+
+    try {
+      testDatabase.database.exec(`
+        CREATE TABLE measurements (
+          value INTEGER NOT NULL,
+          doubled INTEGER GENERATED ALWAYS AS (value * 2) VIRTUAL,
+          label TEXT GENERATED ALWAYS AS ('value-' || value) STORED
+        )
+      `);
+
+      const schema = loadDatabaseSchema(testDatabase.database);
+
+      expect(schema.getResource("measurements")).toEqual({
+        name: "measurements",
+        type: "table",
+        columns: [
+          {
+            name: "value",
+            declaredType: "INTEGER",
+            nullable: false,
+            defaultValue: null,
+          },
+          {
+            name: "doubled",
+            declaredType: "INTEGER",
+            nullable: true,
+            defaultValue: null,
+          },
+          {
+            name: "label",
+            declaredType: "TEXT",
+            nullable: true,
+            defaultValue: null,
+          },
+        ],
+        primaryKey: [],
+      });
+    } finally {
+      cleanupTestDatabase(testDatabase);
+    }
+  });
+
+  it("reports primary-key nullability according to the SQLite table kind", () => {
+    const testDatabase = createTestDatabase();
+
+    try {
+      testDatabase.database.exec(`
+        CREATE TABLE nullable_text_key (code TEXT PRIMARY KEY);
+        CREATE TABLE nullable_composite_key (
+          first INTEGER,
+          second TEXT,
+          PRIMARY KEY (first, second)
+        );
+        CREATE TABLE integer_rowid_alias (id INTEGER PRIMARY KEY);
+        CREATE TABLE nullable_descending_integer_key (
+          id INTEGER PRIMARY KEY DESC
+        );
+        CREATE TABLE without_rowid_key (code TEXT PRIMARY KEY) WITHOUT ROWID;
+        CREATE TABLE strict_key (code TEXT PRIMARY KEY) STRICT;
+      `);
+
+      const schema = loadDatabaseSchema(testDatabase.database);
+      const nullable = (resource: string, column = 0) =>
+        schema.getResource(resource)?.columns[column]?.nullable;
+
+      expect(nullable("nullable_text_key")).toBe(true);
+      expect(nullable("nullable_composite_key", 0)).toBe(true);
+      expect(nullable("nullable_composite_key", 1)).toBe(true);
+      expect(nullable("integer_rowid_alias")).toBe(false);
+      expect(nullable("nullable_descending_integer_key")).toBe(true);
+      expect(nullable("without_rowid_key")).toBe(false);
+      expect(nullable("strict_key")).toBe(false);
+    } finally {
+      cleanupTestDatabase(testDatabase);
+    }
+  });
 });
