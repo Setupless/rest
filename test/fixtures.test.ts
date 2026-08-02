@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-
+import { loadDatabaseSchema } from "../src/database/schema";
 import {
   cleanupTestDatabase,
   createTestApp,
@@ -35,7 +35,9 @@ describe("SQLite integration-test fixtures", () => {
           .query<{ count: number }, []>("SELECT count(*) AS count FROM users")
           .get(),
       ).toEqual({ count: 3 });
-      expect(createTestApp(database).server).toBeNull();
+      expect(
+        createTestApp(database, loadDatabaseSchema(database)).server,
+      ).toBeNull();
     } finally {
       cleanupTestDatabase(testDatabase);
     }
