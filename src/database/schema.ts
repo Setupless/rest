@@ -70,14 +70,14 @@ export function loadDatabaseSchema(database: Database): DatabaseSchema {
              dflt_value AS default_value,
              pk AS primary_key_position,
              hidden
-           FROM pragma_table_xinfo(?)
+           FROM pragma_table_xinfo(?, 'main')
            WHERE hidden <> 1
            ORDER BY cid`,
     );
 
     const primaryKeyIndexQuery = database.query<PrimaryKeyIndexRow, [string]>(
       `SELECT 1 AS present
-       FROM pragma_index_list(?)
+       FROM pragma_index_list(?, 'main')
        WHERE origin = 'pk'
        LIMIT 1`,
     );

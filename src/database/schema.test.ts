@@ -95,6 +95,35 @@ describe("loadDatabaseSchema", () => {
     expect(fixture.schema.getResource("users")).toBe(users);
   });
 
+  it("reads metadata from main when a temporary resource has the same name", () => {
+    const testDatabase = createTestDatabase();
+
+    try {
+      testDatabase.database.exec(`
+        CREATE TEMP TABLE users (
+          temporary_key TEXT PRIMARY KEY,
+          temporary_value BLOB
+        )
+      `);
+
+      const schema = loadDatabaseSchema(testDatabase.database);
+      const users = schema.getResource("users");
+
+      expect(users?.columns.map((column) => column.name)).toEqual([
+        "id",
+        "name",
+        "email",
+        "age",
+        "active",
+        "created_at",
+      ]);
+      expect(users?.columns[0]?.nullable).toBe(false);
+      expect(users?.primaryKey).toEqual(["id"]);
+    } finally {
+      cleanupTestDatabase(testDatabase);
+    }
+  });
+
   it("preserves the declared order of a composite primary key", () => {
     const testDatabase = createTestDatabase();
 
