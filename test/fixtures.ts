@@ -2,12 +2,12 @@ import { afterAll, beforeAll } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-import { createApp } from "../src/index";
+import { type Database, openDatabase } from "../src/database/database";
 import {
-  type Database,
-  openDatabase,
-} from "../src/database/database";
+  type DatabaseSchema,
+  loadDatabaseSchema,
+} from "../src/database/schema";
+import { createApp } from "../src/index";
 
 const TEST_DATABASE_SCHEMA = `
 CREATE TABLE users (
@@ -65,6 +65,7 @@ export interface TestDatabase {
 
 export interface TestFixture extends TestDatabase {
   app: ReturnType<typeof createApp>;
+  schema: DatabaseSchema;
   cleanup: () => void;
 }
 
@@ -99,13 +100,7 @@ export function seedTestDatabase(
 
   const insertUsers = database.transaction((records: readonly TestUser[]) => {
     for (const user of records) {
-      insert.run(
-        user.name,
-        user.email,
-        user.age,
-        user.active,
-        user.createdAt,
-      );
+      insert.run(user.name, user.email, user.age, user.active, user.createdAt);
     }
   });
 
@@ -116,14 +111,11 @@ export function seedTestDatabase(
   }
 }
 
-export function createTestApp(database: Database) {
-  return createApp({ database });
+export function createTestApp(database: Database, schema: DatabaseSchema) {
+  return createApp({ database, schema });
 }
 
-export function cleanupTestDatabase({
-  database,
-  directoryPath,
-}: TestDatabase) {
+export function cleanupTestDatabase({ database, directoryPath }: TestDatabase) {
   try {
     database.close();
   } finally {
@@ -133,15 +125,17 @@ export function cleanupTestDatabase({
 
 export function createTestFixture(): TestFixture {
   const testDatabase = createTestDatabase();
+  const schema = loadDatabaseSchema(testDatabase.database);
   let cleanedUp = false;
 
   try {
     seedTestDatabase(testDatabase.database);
-    const app = createTestApp(testDatabase.database);
+    const app = createTestApp(testDatabase.database, schema);
 
     return {
       ...testDatabase,
       app,
+      schema,
       cleanup: () => {
         if (cleanedUp) return;
 
@@ -181,6 +175,9 @@ export function useTestFixture(): Omit<TestFixture, "cleanup"> {
     },
     get database() {
       return getFixture().database;
+    },
+    get schema() {
+      return getFixture().schema;
     },
     get databasePath() {
       return getFixture().databasePath;

@@ -5,21 +5,27 @@ import {
   type Database,
   openDatabase,
 } from "./database/database";
+import { type DatabaseSchema, loadDatabaseSchema } from "./database/schema";
 
 export interface AppDependencies {
   database: Database;
+  schema: DatabaseSchema;
 }
 
-export function createApp({ database }: AppDependencies) {
-  return new Elysia().decorate("database", database).get("/health", () => ({
-    status: "ok",
-  }));
+export function createApp({ database, schema }: AppDependencies) {
+  return new Elysia()
+    .decorate("database", database)
+    .decorate("schema", schema)
+    .get("/health", () => ({
+      status: "ok",
+    }));
 }
 
 if (import.meta.main) {
   const config = loadConfig();
   const database = openDatabase(config.databasePath);
-  const app = createApp({ database });
+  const schema = loadDatabaseSchema(database);
+  const app = createApp({ database: database, schema });
 
   let shutdownStarted = false;
 
