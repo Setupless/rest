@@ -22,8 +22,10 @@ jobs:
         env:
           BASE_BRANCH: ${{ github.base_ref }}
           HEAD_BRANCH: ${{ github.head_ref }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          if [[ "$BASE_BRANCH" == "main" && "$HEAD_BRANCH" != "dev" ]]; then
+          if [[ "$BASE_BRANCH" == "main" && ( "$HEAD_BRANCH" != "dev" || "$HEAD_REPOSITORY" != "$REPOSITORY" ) ]]; then
             echo "Pull requests into main must come from dev."
             exit 1
           fi
@@ -39,6 +41,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
