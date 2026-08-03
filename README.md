@@ -50,3 +50,7 @@ bun test
 
 Setupless/rest is inspired by PostgREST but is not affiliated with or endorsed
 by the PostgREST project.
+
+## License
+
+Setupless/rest is licensed under the [Apache License 2.0](LICENSE).

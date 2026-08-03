@@ -1,6 +1,7 @@
 {
   "name": "setupless/rest",
   "description": "An experimental, PostgREST-inspired REST API for SQLite",
+  "license": "Apache-2.0",
   "private": true,
   "module": "src/index.ts",
   "type": "module",
