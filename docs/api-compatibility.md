@@ -670,6 +670,7 @@ Prefer: return=minimal, count=exact
 {"priority":1}
 
 HTTP/1.1 204 No Content
+X-Request-Id: 01K1EXAMPLE000000000000000
 Preference-Applied: return=minimal, count=exact
 Range-Unit: items
 Content-Range: 0-1/2

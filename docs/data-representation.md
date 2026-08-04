@@ -171,6 +171,7 @@ Content-Type: application/json
 
 HTTP/1.1 400 Bad Request
 Content-Type: application/json; charset=utf-8
+X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST403","message":"Invalid value","details":"Column \"payload\" contains an unsafe JSON integer.","hint":"Represent integers outside the safe range as JSON strings."}
 ```
