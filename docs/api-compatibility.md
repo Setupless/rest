@@ -127,9 +127,9 @@ the compatibility contract and must fail rather than be interpreted loosely.
 
 ### Root media negotiation (`openapi-root`)
 
-The response below is an intentionally abbreviated discovery example, not the
-normative OpenAPI snapshot. It demonstrates a non-empty table path; the required
-document fields are defined immediately after it.
+The response below is an intentionally abbreviated stock-CLI discovery example,
+not the normative OpenAPI snapshot. It demonstrates a non-empty table path; the
+required document fields are defined immediately after it.
 
 ```http
 GET / HTTP/1.1
@@ -152,7 +152,7 @@ The normative generated document must contain these fields:
 | `/openapi` and `/info` | OpenAPI `3.1.0`, title `Setupless/rest`, and version `0.1.0` |
 | `/paths/<resource>` | Exactly GET/HEAD/OPTIONS for read-only resources and GET/HEAD/OPTIONS/POST/PATCH/DELETE/PUT for writable tables, each with all success and registered error responses |
 | Each resource operation | Applicable filter, `select`, relation, `order`, `limit`, `offset`, item Range, singular media, and `Prefer` parameters plus response media and headers |
-| `/components/securitySchemes/bearerAuth` | HTTP bearer scheme, referenced by GET/HEAD/mutation operations but not root, health, or OPTIONS |
+| `/components/securitySchemes` and operation `/security` | Stock API-key mode defines `bearerAuth` (`type: http`, `scheme: bearer`). Programmatic mode instead defines `programmaticAuth` (`type: http`, `scheme: setupless-plugin`, description `Application-defined credentials; consult the operator`). GET/HEAD/mutation operations reference exactly the active scheme; root, health, and OPTIONS have `security: []` |
 | `/components/schemas/SLRESTError` | Required `code`, `message`, `details`, and `hint` properties matching [Errors](errors.md) |
 | `/components/schemas/<resource>` | Deterministic properties and nullability matching the startup schema and [Data representation](data-representation.md) |
 | `/x-setupless-rest` | `database: sqlite`, `compatibility: postgrest-inspired`, `schemaRefresh: restart-required`, configured maximum rows/depth, and descriptions of the documented representation/deviation rules |
@@ -184,6 +184,17 @@ plugin is authoritative; the server never falls back to the API key after a
 plugin denial or failure. It decides `select`, `insert`, `update`, and `delete`
 per request and resource:
 
+- The plugin receives an immutable clone of the complete inbound `Request`,
+  including method, URL, and headers such as `Authorization` or `Cookie`; the
+  server does not parse, remove, or prescribe plugin credentials.
+- `Authorization: Bearer` is required only in stock API-key mode. Programmatic
+  mode requires whatever credentials the plugin itself validates, which may be
+  a bearer token, another header, a cookie, or no client credential.
+- Because the 0.1 plugin interface has no OpenAPI metadata hook, generated
+  OpenAPI uses the `programmaticAuth` placeholder security scheme described
+  above and `x-setupless-rest-authorization: {"mode":"programmatic","credentials":"application-defined"}`.
+  It must not guess a bearer or API-key requirement. Operators document their
+  concrete plugin credentials separately.
 - `allowed: false` returns 403 by default, or 401 when requested by the plugin.
 - `using` is ANDed with client filters for SELECT and UPDATE/DELETE pre-images.
 - `check` validates INSERT and UPDATE post-images before commit.
@@ -281,9 +292,12 @@ which is ASCII-oriented unless the deployed SQLite build supplies additional
 collation behavior. `is` accepts only `null`, `true`, and `false`.
 
 Values are coerced according to schema metadata without lossy conversion.
-Unknown columns, malformed values, excessive nesting, duplicate ambiguous
-parameters, and invalid operator/type combinations return `SLREST101` or
-`SLREST102` before SQL runs.
+Each parse condition has one code before SQL runs: unknown columns are
+`SLREST101`; malformed filter grammar/values, empty groups, and invalid
+operator/type combinations are `SLREST102`; duplicate scalar filter parameters
+remain valid AND terms, while duplicate query controls such as `select`,
+`order`, `limit`, or `offset` are `SLREST103`; and Boolean or relation nesting
+beyond `MAX_EMBED_DEPTH` is `SLREST110`.
 
 ## Selection, aliases, ordering, and embedding
 
@@ -393,9 +407,14 @@ returns 416 with `Content-Range: */<total>`; a query offset beyond the end is a
 successful empty array.
 
 Resource reads always emit `Range-Unit: items`. `Content-Range` is
-`start-end/*` without exact count, `start-end/total` with it, and `*/0` for an
-empty exact result. Status is 206 only when `count=exact` proves that the
-returned window is a strict subset; otherwise it is 200.
+`start-end/*` for a non-empty result without exact count and `start-end/total`
+for a non-empty exact result. Every successful empty result without exact count
+uses `Content-Range: */*`, including `limit=0`, a filter matching no rows, and a
+query offset beyond the end. With `count=exact`, an empty result uses
+`Content-Range: */total`: this is `*/0` when no authorized rows match and, for
+example, `*/2` when an offset skips two matching rows. Status is 206 only when
+`count=exact` proves that a non-empty returned window is a strict subset;
+successful empty query-pagination results are 200.
 
 Query pagination produces the same window without an HTTP Range header:
 

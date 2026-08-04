@@ -115,6 +115,8 @@ GET /values_example?id=eq.3 HTTP/1.1
 
 HTTP/1.1 500 Internal Server Error
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST501","message":"Stored value is invalid","details":"Column \"payload\" on resource \"values_example\" is not valid declared JSON.","hint":"Repair the stored value and retry."}
 ```
@@ -134,10 +136,31 @@ truthiness conversion, or stringification of arbitrary objects.
 | Declared BOOLEAN | JSON `true` or `false` only | INTEGER 1 or 0 |
 | Declared JSON | Any contract-valid JSON value, including object, array, string, safe number, Boolean, or null | Compact JSON TEXT produced by the canonical rules below; SQL NULL is used only for JSON `null` when the column is nullable |
 | INTEGER affinity | Safe integral JSON number, or canonical base-10 decimal string for any signed 64-bit integer | Exact SQLite INTEGER |
-| REAL affinity | Finite JSON number | SQLite REAL |
+| REAL affinity | Safe binary64 JSON number as defined below | SQLite REAL |
 | TEXT affinity | JSON string | SQLite TEXT |
 | BLOB affinity receiving a blob | String `\x` plus an even number of hexadecimal digits | SQLite BLOB bytes |
-| NUMERIC affinity | Finite JSON number for REAL, safe integral number/canonical signed-64-bit string for INTEGER, or JSON string for TEXT | Matching lossless SQLite storage class |
+| NUMERIC affinity | Safe binary64 JSON number for INTEGER/REAL, canonical signed-64-bit string for INTEGER, or a string that SQLite retains as TEXT | Matching lossless SQLite storage class |
+
+Numeric tokens targeting INTEGER, REAL, NUMERIC, or a nested declared JSON
+value are validated from the raw request before an ordinary JavaScript parse.
+A **safe binary64 JSON number** must satisfy all of these rules:
+
+1. It parses to a finite IEEE-754 binary64 value.
+2. If its exact decimal value is an integer, that value is within
+   `-9007199254740991` through `9007199254740991`.
+3. Serialize the parsed value with the JSON number algorithm, then interpret
+   both the original token and serialized token as exact decimal numbers. They
+   must be mathematically equal. Lexical differences such as `1e3` versus
+   `1000` are allowed; precision changes such as `0.10000000000000001` versus
+   `0.1` are not.
+
+Consequently, `0.1`, `1.5`, and `1e3` are accepted, while
+`9007199254740993`, `0.10000000000000001`, and `1e309` are `SLREST403`.
+Exact decimal values that do not meet this rule require a TEXT-declared column.
+A numeric-looking string sent to REAL/NUMERIC is not an escape hatch: it is
+rejected when SQLite affinity would coerce it lossily. Canonical signed-64-bit
+integer strings remain accepted for INTEGER/NUMERIC because SQLite can store
+them exactly as INTEGER.
 
 For a declared JSON column, JSON `null` maps to SQL NULL when the column is
 nullable; there is no 0.1 syntax to store JSON text `"null"` distinctly through
@@ -147,9 +170,7 @@ Declared JSON number validation is recursive across every object member and
 array element and occurs against the raw request token before an ordinary
 JavaScript parse could round it:
 
-- an integer-valued JSON number must be within
-  `-9007199254740991` through `9007199254740991`;
-- a non-integer JSON number must parse to a finite IEEE-754 binary64 value;
+- every JSON number must satisfy the safe binary64 rule above;
 - clients needing an integer outside the safe range, or exact decimal digits
   beyond binary64 precision, must send a JSON string containing their chosen
   canonical decimal representation; it remains a JSON string; and
@@ -171,10 +192,33 @@ Content-Type: application/json
 
 HTTP/1.1 400 Bad Request
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
 X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST403","message":"Invalid value","details":"Column \"payload\" contains an unsafe JSON integer.","hint":"Represent integers outside the safe range as JSON strings."}
 ```
+
+### Lossy REAL input rejection (`representation-real-unsafe-integer`)
+
+```http
+PATCH /values_example?id=eq.1 HTTP/1.1
+Content-Type: application/json
+
+{"ratio":9007199254740993}
+
+HTTP/1.1 400 Bad Request
+Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+X-Request-Id: 01K1EXAMPLE000000000000000
+
+{"code":"SLREST403","message":"Invalid value","details":"Column \"ratio\" contains an integer outside the safe JSON number range.","hint":"Use a TEXT-declared column when exact digits outside binary64 are required."}
+```
+
+The companion case `representation-numeric-unroundtrippable-decimal` targets a
+NUMERIC column with `{"amount":0.10000000000000001}` and returns the same 400
+envelope with `SLREST403`; `details` names `amount`, and the hint directs the
+client to a TEXT-declared column. These stable IDs are required cases for the
+later black-box suite.
 
 A canonical integer string is `0` or `-?[1-9][0-9]*`, contains no whitespace,
 decimal point, exponent, or leading plus, and must fit
@@ -217,6 +261,8 @@ Content-Type: application/json
 
 HTTP/1.1 400 Bad Request
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST403","message":"Invalid value","details":"Column \"unsafe_integer\" requires a safe integral JSON number or canonical signed 64-bit decimal string.","hint":"Send the integer as a decimal JSON string."}
 ```
