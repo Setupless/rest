@@ -58,17 +58,17 @@ Anything else is replaced by the default message and null fields.
 
 | Code | HTTP | Default message | Trigger | Safe disclosure |
 | --- | ---: | --- | --- | --- |
-| `SLREST100` | 400 | Malformed request | Invalid percent encoding, UTF-8, header syntax, duplicated ambiguous query control, or otherwise unparseable HTTP input | Name of the malformed header/query key and grammar summary; never its sensitive value |
+| `SLREST100` | 400 | Malformed request | Invalid percent encoding, invalid UTF-8, malformed HTTP header syntax, or another transport-level input that cannot be decoded into query controls | Name of the malformed header/query key and grammar summary; never its sensitive value |
 | `SLREST101` | 400 | Unknown column | A filter, selection, order, payload, or conflict parameter names a column absent from the resolved resource | Public resource and column names |
-| `SLREST102` | 400 | Invalid filter | Unknown operator, empty Boolean group, malformed `in`, invalid scalar/type pairing, excessive Boolean nesting, or invalid programmatic filter AST | Operator/column and expected public grammar; omit filter values |
-| `SLREST103` | 400 | Invalid query controls | Invalid select/alias/order/limit/offset, duplicate output name, contradictory Range and query pagination under strict handling, or unsupported nested control | Offending control name, public limit, and expected grammar |
+| `SLREST102` | 400 | Invalid filter | Unknown operator, empty Boolean group, malformed `in`, invalid scalar/type pairing, or an invalid programmatic filter AST below the depth limit | Operator/column and expected public grammar; omit filter values |
+| `SLREST103` | 400 | Invalid query controls | Invalid or duplicate select/alias/order/limit/offset control, duplicate output name, contradictory Range and query pagination under strict handling, or unsupported nested control below the depth limit | Offending control name, public limit, and expected grammar |
 | `SLREST104` | 400 | Invalid preference | Unknown, malformed, or inapplicable preference while `handling=strict` is effective | Preference name and supported values; omit sensitive values |
 | `SLREST105` | 415 | Unsupported media type | Unsupported or malformed request `Content-Type` or response `Accept` | Received media-type token and supported media types |
 | `SLREST106` | 406 | Singular result required | Singular media was requested but the authorized query returned zero or more than one row | Actual authorized row count only (`0` or `more than one`), never row data |
 | `SLREST107` | 400 | Invalid JSON payload | Malformed JSON, disallowed JSON shape, empty PATCH object, empty bulk array, inconsistent bulk columns, or non-object array member | Expected top-level shape and zero-based member index; never body contents |
 | `SLREST108` | 413 | Request body too large | Decoded request body exceeds `MAX_BODY_BYTES`, including streamed/chunked input | Configured byte limit only |
 | `SLREST109` | 416 | Invalid item range | Unsupported range unit, negative/fractional/overflowing/reversed range, or explicit start beyond a known total | Expected `items` syntax and exact total when already authorized and counted |
-| `SLREST110` | 400 | Maximum relation depth exceeded | Selection or Boolean nesting exceeds `MAX_EMBED_DEPTH` | Configured depth only |
+| `SLREST110` | 400 | Maximum nesting depth exceeded | Relation selection or Boolean filter nesting exceeds `MAX_EMBED_DEPTH` | Configured depth only |
 | `SLREST111` | 400 | Maximum affected rows exceeded | Actual PATCH/DELETE count exceeds `Prefer: max-affected`; the transaction is rolled back | Requested maximum and authorized affected count |
 | `SLREST112` | 400 | Invalid PUT identity | PUT lacks a complete equality-filtered PK, includes other controls, has a URL/body mismatch, targets a table without a PK, or omits a required column | Public PK/required column names; never values |
 | `SLREST113` | 400 | Invalid conflict target | Default PK is unavailable or `on_conflict` does not exactly match an unconditional PK/unique constraint | Public candidate column sets |
@@ -122,6 +122,8 @@ Accept: application/vnd.pgrst.object+json
 
 HTTP/1.1 406 Not Acceptable
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST106","message":"Singular result required","details":"The authorized query returned more than one row.","hint":"Refine the query so it returns exactly one row."}
 ```
@@ -134,6 +136,8 @@ GET /tasks HTTP/1.1
 HTTP/1.1 401 Unauthorized
 WWW-Authenticate: Bearer
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST300","message":"Bearer credentials required","details":null,"hint":"Send one Authorization: Bearer <token> header."}
 ```
@@ -148,6 +152,8 @@ Content-Type: application/json
 
 HTTP/1.1 409 Conflict
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST400","message":"Unique constraint conflict","details":"A unique constraint on (id) was violated.","hint":"Use a different key or an applicable resolution preference."}
 ```
@@ -163,6 +169,8 @@ Content-Type: application/json
 HTTP/1.1 503 Service Unavailable
 Retry-After: 1
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
+X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST502","message":"Database is busy","details":null,"hint":"Retry the request after the indicated delay."}
 ```
@@ -172,6 +180,7 @@ Content-Type: application/json; charset=utf-8
 ```http
 HTTP/1.1 500 Internal Server Error
 Content-Type: application/json; charset=utf-8
+Cache-Control: no-store
 X-Request-Id: 01K1EXAMPLE000000000000000
 
 {"code":"SLREST500","message":"Internal server error","details":null,"hint":"Contact the operator with request ID 01K1EXAMPLE000000000000000."}
