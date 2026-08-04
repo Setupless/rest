@@ -26,6 +26,14 @@ It does not yet provide:
 
 There are no releases yet, and breaking changes should be expected.
 
+The normative target for the 0.1 HTTP surface is now documented. These
+documents describe the contract being implemented, not capabilities already
+present in this prototype:
+
+- [API compatibility contract](docs/api-compatibility.md)
+- [Error envelope and `SLREST` registry](docs/errors.md)
+- [SQLite and JSON data representation](docs/data-representation.md)
+
 ## Local development
 
 You will need [Bun](https://bun.sh/) to run the project.
