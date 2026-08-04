@@ -152,7 +152,7 @@ The normative generated document must contain these fields:
 | `/openapi` and `/info` | OpenAPI `3.1.0`, title `Setupless/rest`, and version `0.1.0` |
 | `/paths/<resource>` | Exactly GET/HEAD/OPTIONS for read-only resources and GET/HEAD/OPTIONS/POST/PATCH/DELETE/PUT for writable tables, each with all success and registered error responses |
 | Each resource operation | Applicable filter, `select`, relation, `order`, `limit`, `offset`, item Range, singular media, and `Prefer` parameters plus response media and headers |
-| `/components/securitySchemes` and operation `/security` | Stock API-key mode defines `bearerAuth` (`type: http`, `scheme: bearer`). Programmatic mode instead defines `programmaticAuth` (`type: http`, `scheme: setupless-plugin`, description `Application-defined credentials; consult the operator`). GET/HEAD/mutation operations reference exactly the active scheme; root, health, and OPTIONS have `security: []` |
+| `/components/securitySchemes` and operation `/security` | Stock API-key mode defines `bearerAuth` (`type: http`, `scheme: bearer`); GET/HEAD/mutation operations require it, while root, health, and OPTIONS have `security: []`. The 0.1 programmatic plugin has no security-metadata hook, so programmatic mode defines no guessed scheme and omits standard operation-level `security`; its vendor extension marks authorization as application-defined and OpenAPI security as non-authoritative |
 | `/components/schemas/SLRESTError` | Required `code`, `message`, `details`, and `hint` properties matching [Errors](errors.md) |
 | `/components/schemas/<resource>` | Deterministic properties and nullability matching the startup schema and [Data representation](data-representation.md) |
 | `/x-setupless-rest` | `database: sqlite`, `compatibility: postgrest-inspired`, `schemaRefresh: restart-required`, configured maximum rows/depth, and descriptions of the documented representation/deviation rules |
@@ -190,11 +190,15 @@ per request and resource:
 - `Authorization: Bearer` is required only in stock API-key mode. Programmatic
   mode requires whatever credentials the plugin itself validates, which may be
   a bearer token, another header, a cookie, or no client credential.
-- Because the 0.1 plugin interface has no OpenAPI metadata hook, generated
-  OpenAPI uses the `programmaticAuth` placeholder security scheme described
-  above and `x-setupless-rest-authorization: {"mode":"programmatic","credentials":"application-defined"}`.
-  It must not guess a bearer or API-key requirement. Operators document their
-  concrete plugin credentials separately.
+- Because the 0.1 plugin interface has no OpenAPI metadata hook, programmatic
+  mode defines no `SecurityScheme` and omits top-level and resource-operation
+  `security` fields rather than claiming a concrete or optional credential.
+  It emits
+  `x-setupless-rest-authorization: {"mode":"programmatic","credentials":"application-defined","openapiSecurityAuthoritative":false}`.
+  Operators must document their concrete plugin credentials separately; OpenAPI
+  clients must not infer that omission means resource operations bypass the
+  plugin. A future metadata hook is required before a concrete plugin scheme can
+  appear in standard OpenAPI security requirements.
 - `allowed: false` returns 403 by default, or 401 when requested by the plugin.
 - `using` is ANDed with client filters for SELECT and UPDATE/DELETE pre-images.
 - `check` validates INSERT and UPDATE post-images before commit.
