@@ -47,7 +47,7 @@ JSON string; the server does not parse it as a number after the read.
 | SQLite BLOB | JSON string `\x` followed by two lowercase hex digits per byte | Non-byte buffer is `SLREST501` |
 | Declared BOOLEAN storing integer `0` | JSON `false` | Other storage classes/integers are `SLREST501` |
 | Declared BOOLEAN storing integer `1` | JSON `true` | Other storage classes/integers are `SLREST501` |
-| Declared JSON storing valid JSON text | Parsed JSON value | Malformed text or non-TEXT storage is `SLREST501` |
+| Declared JSON storing contract-valid JSON text | Parsed JSON value | Malformed text, unsafe numeric token, or non-TEXT storage is `SLREST501` |
 
 `Number.MAX_SAFE_INTEGER` and `Number.MIN_SAFE_INTEGER` are included in the
 number range. The next integers are strings. Negative zero from a REAL is
@@ -132,7 +132,7 @@ truthiness conversion, or stringification of arbitrary objects.
 | --- | --- | --- |
 | Nullable column | `null` | SQL `NULL` |
 | Declared BOOLEAN | JSON `true` or `false` only | INTEGER 1 or 0 |
-| Declared JSON | Any JSON value, including object, array, string, number, Boolean, or null | Compact valid JSON TEXT; SQL NULL is used only for JSON `null` when the column is nullable |
+| Declared JSON | Any contract-valid JSON value, including object, array, string, safe number, Boolean, or null | Compact JSON TEXT produced by the canonical rules below; SQL NULL is used only for JSON `null` when the column is nullable |
 | INTEGER affinity | Safe integral JSON number, or canonical base-10 decimal string for any signed 64-bit integer | Exact SQLite INTEGER |
 | REAL affinity | Finite JSON number | SQLite REAL |
 | TEXT affinity | JSON string | SQLite TEXT |
@@ -142,6 +142,38 @@ truthiness conversion, or stringification of arbitrary objects.
 For a declared JSON column, JSON `null` maps to SQL NULL when the column is
 nullable; there is no 0.1 syntax to store JSON text `"null"` distinctly through
 that column. Non-nullable declared JSON therefore rejects JSON `null`.
+
+Declared JSON number validation is recursive across every object member and
+array element and occurs against the raw request token before an ordinary
+JavaScript parse could round it:
+
+- an integer-valued JSON number must be within
+  `-9007199254740991` through `9007199254740991`;
+- a non-integer JSON number must parse to a finite IEEE-754 binary64 value;
+- clients needing an integer outside the safe range, or exact decimal digits
+  beyond binary64 precision, must send a JSON string containing their chosen
+  canonical decimal representation; it remains a JSON string; and
+- accepted values are stored as compact `JSON.stringify`-equivalent text.
+  Whitespace and numeric lexical spelling are not preserved, but the accepted
+  JSON value is.
+
+Thus `{"n":9007199254740993}` is `SLREST403`, before it can become
+`9007199254740992`. The lossless representation
+`{"n":"9007199254740993"}` is accepted and stored exactly as compact text
+`{"n":"9007199254740993"}`. Existing declared JSON text containing an unsafe
+numeric token is `SLREST501` on read rather than being silently rounded.
+
+```http
+POST /values_example HTTP/1.1
+Content-Type: application/json
+
+{"id":5,"payload":{"n":9007199254740993}}
+
+HTTP/1.1 400 Bad Request
+Content-Type: application/json; charset=utf-8
+
+{"code":"SLREST403","message":"Invalid value","details":"Column \"payload\" contains an unsafe JSON integer.","hint":"Represent integers outside the safe range as JSON strings."}
+```
 
 A canonical integer string is `0` or `-?[1-9][0-9]*`, contains no whitespace,
 decimal point, exponent, or leading plus, and must fit

@@ -127,6 +127,10 @@ the compatibility contract and must fail rather than be interpreted loosely.
 
 ### Root media negotiation (`openapi-root`)
 
+The response below is an intentionally abbreviated discovery example, not the
+normative OpenAPI snapshot. It demonstrates a non-empty table path; the required
+document fields are defined immediately after it.
+
 ```http
 GET / HTTP/1.1
 Accept: application/openapi+json
@@ -134,15 +138,28 @@ Accept: application/openapi+json
 HTTP/1.1 200 OK
 Content-Type: application/openapi+json; charset=utf-8
 
-{"openapi":"3.1.0","info":{"title":"Setupless/rest","version":"0.1.0"},"paths":{"/tasks":{}}}
+{"openapi":"3.1.0","info":{"title":"Setupless/rest","version":"0.1.0"},"paths":{"/tasks":{"get":{"responses":{"200":{"description":"JSON task array"}}},"head":{"responses":{"200":{"description":"Task headers"}}},"options":{"responses":{"204":{"description":"Supported methods"}}},"post":{"responses":{"201":{"description":"Insert tasks"}}},"patch":{"responses":{"204":{"description":"Update tasks"}}},"delete":{"responses":{"204":{"description":"Delete tasks"}}},"put":{"responses":{"201":{"description":"Upsert one task"}}}}},"components":{"securitySchemes":{"bearerAuth":{"type":"http","scheme":"bearer"}}},"x-setupless-rest":{"database":"sqlite","compatibility":"postgrest-inspired","schemaRefresh":"restart-required"}}
 ```
 
 Absent `Accept`, `*/*`, or `application/openapi+json` uses the OpenAPI media
 type. `Accept: application/json` returns the same document as
-`application/json; charset=utf-8`. The document advertises exactly the methods
-available for each startup resource, the supported query/preference syntax,
-authentication, the error schema, data representation, and the restart
-requirement. Output ordering is deterministic and no secret is included.
+`application/json; charset=utf-8`.
+
+The normative generated document must contain these fields:
+
+| JSON location | Required content |
+| --- | --- |
+| `/openapi` and `/info` | OpenAPI `3.1.0`, title `Setupless/rest`, and version `0.1.0` |
+| `/paths/<resource>` | Exactly GET/HEAD/OPTIONS for read-only resources and GET/HEAD/OPTIONS/POST/PATCH/DELETE/PUT for writable tables, each with all success and registered error responses |
+| Each resource operation | Applicable filter, `select`, relation, `order`, `limit`, `offset`, item Range, singular media, and `Prefer` parameters plus response media and headers |
+| `/components/securitySchemes/bearerAuth` | HTTP bearer scheme, referenced by GET/HEAD/mutation operations but not root, health, or OPTIONS |
+| `/components/schemas/SLRESTError` | Required `code`, `message`, `details`, and `hint` properties matching [Errors](errors.md) |
+| `/components/schemas/<resource>` | Deterministic properties and nullability matching the startup schema and [Data representation](data-representation.md) |
+| `/x-setupless-rest` | `database: sqlite`, `compatibility: postgrest-inspired`, `schemaRefresh: restart-required`, configured maximum rows/depth, and descriptions of the documented representation/deviation rules |
+
+The actual document is the complete schema-derived expansion of this table.
+Output ordering is deterministic, empty databases have no resource paths, and
+no API key, policy detail, or other secret is included.
 
 ## Authentication and authorization
 
@@ -624,7 +641,7 @@ of the header. Defaults are `handling=lenient`, `return=minimal`, and
 | --- | --- | --- |
 | `handling` | `lenient`, `strict` | Every request |
 | `return` | `minimal`, `headers-only`, `representation` | Mutations |
-| `count` | `exact` | GET/HEAD and mutation representation |
+| `count` | `exact` | GET/HEAD and every successful POST/PATCH/DELETE/PUT return mode |
 | `missing` | `null`, `default` | POST and PUT |
 | `resolution` | `merge-duplicates`, `ignore-duplicates` | POST only |
 | `max-affected` | Non-negative decimal safe integer | PATCH and DELETE |
@@ -634,10 +651,33 @@ returns `SLREST104` before execution. `Preference-Applied` contains only
 recognized preferences actually applied, in canonical table order; requested
 values equal to defaults are still included when applicable.
 
-For successful mutations, `count=exact` reports the authorized affected-row
-count through `Range-Unit: items` and `Content-Range`, even for a minimal body;
-it does not change the mutation's normal 200/201/204 status. A representation
-uses `0-(n-1)/n`, while a zero-row mutation uses `*/0`.
+For every successful POST, PATCH, DELETE, or PUT with `count=exact`, the
+preference is applicable independently of `return`. `Preference-Applied`
+includes `count=exact` after the applied `return` value for `return=minimal`,
+`return=headers-only`, and `return=representation`. Every mode returns
+`Range-Unit: items`; a positive affected count `n` returns
+`Content-Range: 0-(n-1)/n`, while zero affected rows return
+`Content-Range: */0`. Minimal and headers-only modes still have no body;
+headers-only also returns `Location` when its normal single-row identity rule
+is satisfied. Exact counting never changes the mutation's normal 200/201/204
+status.
+
+```http
+PATCH /tasks?done=is.false HTTP/1.1
+Content-Type: application/json
+Prefer: return=minimal, count=exact
+
+{"priority":1}
+
+HTTP/1.1 204 No Content
+Preference-Applied: return=minimal, count=exact
+Range-Unit: items
+Content-Range: 0-1/2
+```
+
+`count=exact` is inapplicable to root, health, and OPTIONS requests, and to any
+failed request. Lenient handling ignores it there; strict handling returns
+`SLREST104`. Failed requests never include it in `Preference-Applied`.
 
 Unknown preferences illustrate the handling modes:
 
