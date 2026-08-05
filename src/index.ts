@@ -33,6 +33,27 @@ export {
   type SQLiteAffinity,
 } from "./database/schema";
 export {
+  createRestError,
+  REST_ERROR_DEFINITIONS,
+  RestError,
+  type RestErrorCode,
+  type RestErrorOptions,
+  toErrorResponse,
+} from "./http/errors";
+export {
+  getResponseContentType,
+  negotiateResponseMediaType,
+  type RestMediaType,
+  validateRequestMediaType,
+} from "./http/media-type";
+export {
+  getPreferenceApplied,
+  parsePreferences,
+  type RestPreferenceContext,
+  type RestPreferenceName,
+  type RestPreferences,
+} from "./http/preferences";
+export {
   type RunningRestServer,
   type ServeRestOptions,
   serveRest,
