@@ -1,9 +1,9 @@
-type AppConfig = {
+export interface RestConfig {
   databasePath: string;
   port: number;
-};
+}
 
-function loadConfig(env = process.env): AppConfig {
+function loadConfig(env = process.env): RestConfig {
   const databasePath = env.DATABASE_PATH?.trim();
   const port = env.PORT ? Number(env.PORT) : 3000;
 
@@ -29,4 +29,4 @@ function loadConfig(env = process.env): AppConfig {
   };
 }
 
-export { type AppConfig, loadConfig };
+export { loadConfig };

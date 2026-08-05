@@ -2,12 +2,12 @@ import { afterAll, beforeAll } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createRestApp } from "../src/app";
 import { type Database, openDatabase } from "../src/database/database";
 import {
   type DatabaseSchema,
   loadDatabaseSchema,
 } from "../src/database/schema";
-import { createApp } from "../src/index";
 
 const TEST_DATABASE_SCHEMA = `
 CREATE TABLE users (
@@ -64,7 +64,7 @@ export interface TestDatabase {
 }
 
 export interface TestFixture extends TestDatabase {
-  app: ReturnType<typeof createApp>;
+  app: ReturnType<typeof createRestApp>;
   schema: DatabaseSchema;
   cleanup: () => void;
 }
@@ -112,7 +112,7 @@ export function seedTestDatabase(
 }
 
 export function createTestApp(database: Database, schema: DatabaseSchema) {
-  return createApp({ database, schema });
+  return createRestApp({ database, schema });
 }
 
 export function cleanupTestDatabase({ database, directoryPath }: TestDatabase) {
