@@ -40,8 +40,8 @@ You will need [Bun](https://bun.sh/) to run the project.
 
 1. Install dependencies with `bun install`.
 2. Copy `.env.example` to `.env`.
-3. Set `DATABASE_PATH` to a local `.sqlite` or `.db` file. `PORT` is optional
-   and defaults to `3000`.
+3. Set `DATABASE_PATH` to a local `.sqlite` or `.db` file and set a non-blank
+   `SETUPLESS_REST_API_KEY`. The remaining variables have safe defaults below.
 4. Start the development server with `bun run dev`.
 
 To build and run the production bundle:
@@ -54,6 +54,28 @@ bun run start
 The library entrypoint can also be imported without starting a server. Use
 `createRestApp` to construct an Elysia application around existing database
 dependencies, or `serveRest` to own the complete database and server lifecycle.
+
+### Configuration
+
+`loadConfig` validates the complete environment before startup and returns an
+immutable snapshot. Numeric values must be unsigned base-10 integers without
+surrounding whitespace.
+
+| Variable | Default and validation |
+| --- | --- |
+| `DATABASE_PATH` | Required; `:memory:` or a path ending in `.sqlite`/`.db`. Missing files are created only when the parent directory exists. |
+| `HOST` | `127.0.0.1`; a hostname or IP address. |
+| `PORT` | `3000`; 1–65535. |
+| `SETUPLESS_REST_API_KEY` | No default; blank is absent and the stock CLI requires a value before listening. Programmatic configuration may omit it. |
+| `MAX_ROWS` | `1000`; 1–1,000,000. |
+| `MAX_EMBED_DEPTH` | `5`; 0–20. |
+| `MAX_BODY_BYTES` | `1048576`; 1–1,073,741,824. |
+| `SQLITE_BUSY_TIMEOUT_MS` | `5000`; 0–600,000. |
+| `CORS_ORIGINS` | Empty; comma-separated exact HTTP(S) origins, trimmed and deduplicated. Wildcards, credentials, paths, queries, and fragments are rejected. |
+| `LOG_LEVEL` | `info`; `debug`, `info`, `warn`, or `error`. |
+
+File databases start in WAL mode with foreign keys and the configured busy
+timeout enabled and verified. Startup never creates missing parent directories.
 
 ## Checks
 

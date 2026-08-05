@@ -75,7 +75,7 @@ export function createTestDatabase(): TestDatabase {
   let database: Database | undefined;
 
   try {
-    database = openDatabase(databasePath);
+    database = openDatabase({ path: databasePath, busyTimeoutMs: 5000 });
     database.exec(TEST_DATABASE_SCHEMA);
 
     return { database, databasePath, directoryPath };

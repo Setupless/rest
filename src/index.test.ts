@@ -8,6 +8,7 @@ import {
   TEST_USERS,
   useTestFixture,
 } from "../test/fixtures";
+import { loadConfig } from "./config";
 import { serveRest } from "./server";
 
 describe("GET /health", () => {
@@ -127,6 +128,53 @@ describe("library entrypoint", () => {
   });
 });
 
+describe("stock CLI configuration", () => {
+  it.each([undefined, "   "])(
+    "rejects a missing or blank API key before opening the database",
+    async (apiKey) => {
+      const testDatabase = createTestDatabase();
+      const databasePath = join(
+        testDatabase.directoryPath,
+        "cli-must-not-open.sqlite",
+      );
+      testDatabase.database.close();
+      const env = {
+        ...process.env,
+        DATABASE_PATH: databasePath,
+        ...(apiKey === undefined
+          ? { SETUPLESS_REST_API_KEY: undefined }
+          : { SETUPLESS_REST_API_KEY: apiKey }),
+      };
+
+      try {
+        const child = Bun.spawn([process.execPath, "src/cli.ts"], {
+          cwd: `${import.meta.dir}/..`,
+          env,
+          stderr: "pipe",
+          stdout: "pipe",
+        });
+        const timeout = setTimeout(() => child.kill(), 2_000);
+        const exitCode = await child.exited;
+        clearTimeout(timeout);
+
+        const stdout = await new Response(child.stdout).text();
+        const stderr = await new Response(child.stderr).text();
+
+        expect(exitCode).toBe(1);
+        expect(stdout).toBe("");
+        expect(stderr).toContain("SETUPLESS_REST_API_KEY is required");
+        expect(stderr).not.toContain(databasePath);
+        expect(existsSync(databasePath)).toBe(false);
+      } finally {
+        rmSync(testDatabase.directoryPath, {
+          force: true,
+          recursive: true,
+        });
+      }
+    },
+  );
+});
+
 describe("server lifecycle", () => {
   it("starts and stops idempotently on an ephemeral port", async () => {
     const testDatabase = createTestDatabase();
@@ -138,7 +186,7 @@ describe("server lifecycle", () => {
       const initialSigintListeners = process.listenerCount("SIGINT");
       const initialSigtermListeners = process.listenerCount("SIGTERM");
       server = await serveRest({
-        config: { databasePath, port: 0 },
+        config: { ...loadConfig({ DATABASE_PATH: databasePath }), port: 0 },
       });
 
       expect(server.port).toBeGreaterThan(0);
@@ -159,6 +207,28 @@ describe("server lifecycle", () => {
     } finally {
       await server?.stop();
       rmSync(directoryPath, { force: true, recursive: true });
+    }
+  });
+
+  it("fails before listening when the database parent is missing", async () => {
+    const testDatabase = createTestDatabase();
+    const missingParent = join(testDatabase.directoryPath, "missing");
+    const databasePath = join(missingParent, "database.sqlite");
+    testDatabase.database.close();
+    const initialSigintListeners = process.listenerCount("SIGINT");
+    const initialSigtermListeners = process.listenerCount("SIGTERM");
+
+    try {
+      await expect(
+        serveRest({
+          config: loadConfig({ DATABASE_PATH: databasePath }),
+        }),
+      ).rejects.toThrow("DATABASE_PATH parent directory must already exist");
+      expect(existsSync(missingParent)).toBe(false);
+      expect(process.listenerCount("SIGINT")).toBe(initialSigintListeners);
+      expect(process.listenerCount("SIGTERM")).toBe(initialSigtermListeners);
+    } finally {
+      rmSync(testDatabase.directoryPath, { force: true, recursive: true });
     }
   });
 });
