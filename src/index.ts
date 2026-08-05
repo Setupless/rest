@@ -12,9 +12,13 @@ export {
 } from "./database/database";
 export {
   type DatabaseColumn,
+  type DatabaseForeignKey,
   type DatabaseResource,
   type DatabaseSchema,
+  type DatabaseUniqueConstraint,
+  getSQLiteAffinity,
   loadDatabaseSchema,
+  type SQLiteAffinity,
 } from "./database/schema";
 export {
   type RunningRestServer,
