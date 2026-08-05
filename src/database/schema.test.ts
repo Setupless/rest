@@ -278,10 +278,10 @@ describe("loadDatabaseSchema", () => {
 
     try {
       testDatabase.database.exec(`
-        CREATE TABLE organizations (
-          tenant TEXT NOT NULL,
-          slug TEXT NOT NULL,
-          PRIMARY KEY (slug, tenant)
+        CREATE TABLE "Organizations" (
+          "Tenant" TEXT NOT NULL,
+          "Slug" TEXT NOT NULL,
+          PRIMARY KEY ("Slug", "Tenant")
         );
         CREATE TABLE memberships (
           organization_slug TEXT,
@@ -296,7 +296,7 @@ describe("loadDatabaseSchema", () => {
           organization_slug TEXT,
           organization_tenant TEXT,
           FOREIGN KEY (organization_slug, organization_tenant)
-            REFERENCES organizations
+            REFERENCES ORGANIZATIONS
         );
       `);
 
@@ -304,7 +304,7 @@ describe("loadDatabaseSchema", () => {
       const membershipForeignKeys =
         schema.getResource("memberships")?.foreignKeys ?? [];
       const organizationForeignKey = membershipForeignKeys.find(
-        (foreignKey) => foreignKey.referencedResource === "organizations",
+        (foreignKey) => foreignKey.referencedResource === "Organizations",
       );
       const userForeignKey = membershipForeignKeys.find(
         (foreignKey) => foreignKey.referencedResource === "users",
@@ -317,8 +317,8 @@ describe("loadDatabaseSchema", () => {
       );
       expect(organizationForeignKey).toMatchObject({
         fromColumns: ["organization_slug", "organization_tenant"],
-        referencedResource: "organizations",
-        referencedColumns: ["slug", "tenant"],
+        referencedResource: "Organizations",
+        referencedColumns: ["Slug", "Tenant"],
       });
       expect(userForeignKey).toMatchObject({
         fromColumns: ["user_id"],
@@ -335,10 +335,48 @@ describe("loadDatabaseSchema", () => {
         {
           id: 0,
           fromColumns: ["organization_slug", "organization_tenant"],
-          referencedResource: "organizations",
-          referencedColumns: ["slug", "tenant"],
+          referencedResource: "Organizations",
+          referencedColumns: ["Slug", "Tenant"],
         },
       ]);
+    } finally {
+      cleanupTestDatabase(testDatabase);
+    }
+  });
+
+  it("preserves distinct non-ASCII resource names when resolving foreign keys", () => {
+    const testDatabase = createTestDatabase();
+
+    try {
+      testDatabase.database.exec(`
+        CREATE TABLE "Ä" (id INTEGER PRIMARY KEY);
+        CREATE TABLE "ä" (code TEXT PRIMARY KEY);
+        CREATE TABLE non_ascii_references (
+          upper_id INTEGER REFERENCES "Ä" (id),
+          lower_code TEXT REFERENCES "ä" (code)
+        );
+      `);
+
+      const foreignKeys =
+        loadDatabaseSchema(testDatabase.database).getResource(
+          "non_ascii_references",
+        )?.foreignKeys ?? [];
+
+      expect(
+        foreignKeys.map((foreignKey) => foreignKey.referencedResource).sort(),
+      ).toEqual(["Ä", "ä"]);
+      expect(
+        foreignKeys.find((foreignKey) => foreignKey.referencedResource === "Ä"),
+      ).toMatchObject({
+        fromColumns: ["upper_id"],
+        referencedColumns: ["id"],
+      });
+      expect(
+        foreignKeys.find((foreignKey) => foreignKey.referencedResource === "ä"),
+      ).toMatchObject({
+        fromColumns: ["lower_code"],
+        referencedColumns: ["code"],
+      });
     } finally {
       cleanupTestDatabase(testDatabase);
     }
