@@ -3,5 +3,10 @@
   "formatter": {
     "indentStyle": "space",
     "indentWidth": 2
+  },
+  "vcs": {
+    "clientKind": "git",
+    "enabled": true,
+    "useIgnoreFile": true
   }
 }

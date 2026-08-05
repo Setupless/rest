@@ -44,7 +44,16 @@ You will need [Bun](https://bun.sh/) to run the project.
    and defaults to `3000`.
 4. Start the development server with `bun run dev`.
 
-To run the server without watch mode, use `bun run start`.
+To build and run the production bundle:
+
+```sh
+bun run build
+bun run start
+```
+
+The library entrypoint can also be imported without starting a server. Use
+`createRestApp` to construct an Elysia application around existing database
+dependencies, or `serveRest` to own the complete database and server lifecycle.
 
 ## Checks
 

@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import { existsSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
-import { TEST_USERS, useTestFixture } from "../test/fixtures";
+import {
+  cleanupTestDatabase,
+  createTestDatabase,
+  TEST_USERS,
+  useTestFixture,
+} from "../test/fixtures";
+import { serveRest } from "./server";
 
 describe("GET /health", () => {
   const fixture = useTestFixture();
@@ -51,5 +59,106 @@ describe("GET /health", () => {
         .all(),
     ).toEqual([{ name: "Alice Johnson" }, { name: "Charlie Brown" }]);
     expect(fixture.app.server).toBeNull();
+  });
+});
+
+describe("library entrypoint", () => {
+  it("can be imported without opening a database, port, or signal handlers", async () => {
+    const testDatabase = createTestDatabase();
+    const importDatabasePath = join(
+      testDatabase.directoryPath,
+      "import-side-effect.sqlite",
+    );
+
+    try {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `
+            const before = {
+              sigint: process.listenerCount("SIGINT"),
+              sigterm: process.listenerCount("SIGTERM"),
+            };
+            const api = await import("./src/index.ts");
+            console.log(JSON.stringify({
+              before,
+              after: {
+                sigint: process.listenerCount("SIGINT"),
+                sigterm: process.listenerCount("SIGTERM"),
+              },
+              exports: {
+                createRestApp: typeof api.createRestApp,
+                serveRest: typeof api.serveRest,
+              },
+            }));
+          `,
+        ],
+        {
+          cwd: `${import.meta.dir}/..`,
+          env: {
+            ...process.env,
+            DATABASE_PATH: importDatabasePath,
+            PORT: "3000",
+          },
+          stderr: "pipe",
+          stdout: "pipe",
+        },
+      );
+
+      const timeout = setTimeout(() => child.kill(), 2_000);
+      const exitCode = await child.exited;
+      clearTimeout(timeout);
+
+      const stdout = await new Response(child.stdout).text();
+      const stderr = await new Response(child.stderr).text();
+
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
+      expect(JSON.parse(stdout)).toEqual({
+        before: { sigint: 0, sigterm: 0 },
+        after: { sigint: 0, sigterm: 0 },
+        exports: { createRestApp: "function", serveRest: "function" },
+      });
+      expect(existsSync(importDatabasePath)).toBe(false);
+    } finally {
+      cleanupTestDatabase(testDatabase);
+    }
+  });
+});
+
+describe("server lifecycle", () => {
+  it("starts and stops idempotently on an ephemeral port", async () => {
+    const testDatabase = createTestDatabase();
+    const { databasePath, directoryPath } = testDatabase;
+    testDatabase.database.close();
+    let server: Awaited<ReturnType<typeof serveRest>> | undefined;
+
+    try {
+      const initialSigintListeners = process.listenerCount("SIGINT");
+      const initialSigtermListeners = process.listenerCount("SIGTERM");
+      server = await serveRest({
+        config: { databasePath, port: 0 },
+      });
+
+      expect(server.port).toBeGreaterThan(0);
+      expect(process.listenerCount("SIGINT")).toBe(initialSigintListeners + 1);
+      expect(process.listenerCount("SIGTERM")).toBe(
+        initialSigtermListeners + 1,
+      );
+
+      const response = await fetch(`http://localhost:${server.port}/health`);
+
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: "ok" });
+
+      await Promise.all([server.stop(), server.stop()]);
+
+      expect(process.listenerCount("SIGINT")).toBe(initialSigintListeners);
+      expect(process.listenerCount("SIGTERM")).toBe(initialSigtermListeners);
+    } finally {
+      await server?.stop();
+      rmSync(directoryPath, { force: true, recursive: true });
+    }
   });
 });
