@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { RestError, toErrorResponse } from "../http/errors";
 import { openDatabase } from "./database";
 import {
   buildRelationshipGraph,
@@ -355,6 +356,43 @@ describe("buildRelationshipGraph", () => {
         }
       },
     );
+  });
+
+  it("serializes resolution failures through the shared HTTP error contract", async () => {
+    let resolutionError: unknown;
+
+    withRelationshipGraph(
+      `CREATE TABLE projects (id INTEGER PRIMARY KEY);
+       CREATE TABLE tasks (
+         id INTEGER PRIMARY KEY,
+         project_id INTEGER REFERENCES projects(id)
+       );`,
+      (graph) => {
+        try {
+          graph.resolve("tasks", "missing");
+        } catch (error) {
+          resolutionError = error;
+        }
+      },
+    );
+
+    expect(resolutionError).toBeInstanceOf(RelationshipResolutionError);
+    expect(resolutionError).toBeInstanceOf(RestError);
+
+    const response = toErrorResponse(resolutionError, "relationship-request");
+    expect(response.status).toBe(400);
+    expect(response.headers.get("Content-Type")).toBe(
+      "application/json; charset=utf-8",
+    );
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(response.headers.get("X-Request-Id")).toBe("relationship-request");
+    expect(await response.json()).toEqual({
+      code: "SLREST202",
+      message: "Relationship not found",
+      details:
+        'No inferred relationship exists from resource "tasks" to resource "missing".',
+      hint: null,
+    });
   });
 
   it("orders output deterministically and deeply freezes every collection", () => {
