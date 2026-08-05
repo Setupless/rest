@@ -31,7 +31,8 @@ export interface CompiledSql {
 }
 
 export const DEFAULT_FILTER_MAX_DEPTH = 5;
-export const MAX_FILTER_IN_VALUES = 500;
+export const MAX_FILTER_PARAMETERS = 500;
+export const MAX_FILTER_IN_VALUES = MAX_FILTER_PARAMETERS;
 
 const COMPARISON_OPERATORS = new Set<RestComparisonOperator>([
   "eq",
@@ -111,6 +112,22 @@ export function assertFilterInListLength(length: number): void {
       `The in operator accepts at most ${MAX_FILTER_IN_VALUES} values.`,
     );
   }
+}
+
+interface FilterParameterBudget {
+  count: number;
+}
+
+function reserveFilterParameters(
+  budget: FilterParameterBudget,
+  count: number,
+): void {
+  if (count > MAX_FILTER_PARAMETERS - budget.count) {
+    throw invalidFilter(
+      `A filter accepts at most ${MAX_FILTER_PARAMETERS} total values.`,
+    );
+  }
+  budget.count += count;
 }
 
 function normalizedDeclaredType(column: DatabaseColumn): string {
@@ -379,6 +396,7 @@ function validateNode(
   maxDepth: number,
   booleanDepth: number,
   active: WeakSet<object>,
+  parameterBudget: FilterParameterBudget,
 ): void {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw invalidFilter("A filter node must be an object.");
@@ -409,6 +427,7 @@ function validateNode(
           throw invalidFilter("The in operator requires a value list.");
         }
         assertFilterInListLength(node.value.length);
+        reserveFilterParameters(parameterBudget, node.value.length);
         for (const item of node.value) {
           assertScalar(item);
           if (item === null) {
@@ -427,6 +446,7 @@ function validateNode(
       if (node.value === null && operator !== "is") {
         throw invalidFilter("Null filters must use the is operator.");
       }
+      reserveFilterParameters(parameterBudget, 1);
       assertOperatorCompatibility(operator, node.value, column);
       assertProgrammaticValue(node.value, column);
       return;
@@ -445,7 +465,14 @@ function validateNode(
     if (nextDepth > maxDepth) throw filterDepthExceeded(maxDepth);
 
     if (key === "not") {
-      validateNode(node.not, resource, maxDepth, nextDepth, active);
+      validateNode(
+        node.not,
+        resource,
+        maxDepth,
+        nextDepth,
+        active,
+        parameterBudget,
+      );
       return;
     }
 
@@ -454,7 +481,14 @@ function validateNode(
       throw invalidFilter(`${key} requires a non-empty filter list.`);
     }
     for (const child of children) {
-      validateNode(child, resource, maxDepth, nextDepth, active);
+      validateNode(
+        child,
+        resource,
+        maxDepth,
+        nextDepth,
+        active,
+        parameterBudget,
+      );
     }
   } finally {
     active.delete(value);
@@ -470,7 +504,7 @@ export function validateRestFilter(
   if (!Number.isSafeInteger(maxDepth) || maxDepth < 0) {
     throw new TypeError("maxDepth must be a non-negative safe integer");
   }
-  validateNode(filter, resource, maxDepth, 0, new WeakSet());
+  validateNode(filter, resource, maxDepth, 0, new WeakSet(), { count: 0 });
 }
 
 /** Combines independently trusted client and policy filters only through AND. */
