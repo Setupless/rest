@@ -262,7 +262,12 @@ function isApplicable(
   }
   if (name === "missing") return context === "POST" || context === "PUT";
   if (name === "resolution") return context === "POST";
-  return context === "PATCH" || context === "DELETE";
+  if (name === "max-affected") {
+    return context === "PATCH" || context === "DELETE";
+  }
+
+  const unhandled: never = name;
+  throw new TypeError(`Unhandled preference: ${String(unhandled)}`);
 }
 
 /**

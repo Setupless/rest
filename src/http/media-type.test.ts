@@ -143,14 +143,17 @@ describe("validateRequestMediaType", () => {
     expect(() => validateRequestMediaType(contentType(value))).not.toThrow();
   });
 
-  it("rejects a missing request Content-Type", () => {
-    expect(() => validateRequestMediaType(contentType())).toThrow(
-      expect.objectContaining({
-        code: "SLREST105",
-        details: "Content-Type is required for a request body.",
-      }),
-    );
-  });
+  it.each([undefined, "", "   "])(
+    "rejects a missing request Content-Type %p",
+    (value) => {
+      expect(() => validateRequestMediaType(contentType(value))).toThrow(
+        expect.objectContaining({
+          code: "SLREST105",
+          details: "Content-Type is required for a request body.",
+        }),
+      );
+    },
+  );
 
   it.each([
     "text/plain",
