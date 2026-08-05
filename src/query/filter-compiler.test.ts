@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { FILTER_RESOURCE } from "../../test/filter-fixture";
 import { useTestFixture } from "../../test/fixtures";
-import type { RestFilter } from "./filter";
+import { MAX_FILTER_PARAMETERS, type RestFilter } from "./filter";
 import { compileRestFilter } from "./filter-compiler";
 import { parseRestFilters } from "./filter-parser";
 
@@ -124,6 +124,17 @@ describe("compileRestFilter", () => {
 
     expect(Object.isFrozen(compiled)).toBe(true);
     expect(Object.isFrozen(compiled.parameters)).toBe(true);
+  });
+
+  it("rejects aggregate values before emitting an oversized SQL program", () => {
+    const filters = Array.from(
+      { length: MAX_FILTER_PARAMETERS + 1 },
+      (_, value): RestFilter => ({ field: "id", operator: "eq", value }),
+    );
+
+    expect(() =>
+      compileRestFilter({ and: filters }, FILTER_RESOURCE, "r"),
+    ).toThrow(expect.objectContaining({ code: "SLREST102" }));
   });
 
   it("compiles equivalent URL and programmatic filters identically", () => {

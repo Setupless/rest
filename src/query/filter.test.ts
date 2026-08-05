@@ -3,6 +3,7 @@ import { FILTER_RESOURCE } from "../../test/filter-fixture";
 import {
   andFilters,
   MAX_FILTER_IN_VALUES,
+  MAX_FILTER_PARAMETERS,
   type RestFilter,
   validateRestFilter,
 } from "./filter";
@@ -61,6 +62,53 @@ describe("validateRestFilter", () => {
             { length: MAX_FILTER_IN_VALUES + 1 },
             (_, index) => index,
           ),
+        },
+        FILTER_RESOURCE,
+      ),
+    ).toThrow(expect.objectContaining({ code: "SLREST102" }));
+  });
+
+  it("accepts the aggregate parameter boundary", () => {
+    expect(() =>
+      validateRestFilter(
+        {
+          field: "id",
+          operator: "in",
+          value: Array.from(
+            { length: MAX_FILTER_PARAMETERS },
+            (_, index) => index,
+          ),
+        },
+        FILTER_RESOURCE,
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects a combined filter above the aggregate parameter bound", () => {
+    const firstListLength = Math.floor(MAX_FILTER_PARAMETERS / 2);
+    const secondListLength = MAX_FILTER_PARAMETERS - firstListLength + 1;
+
+    expect(() =>
+      validateRestFilter(
+        {
+          and: [
+            {
+              field: "id",
+              operator: "in",
+              value: Array.from(
+                { length: firstListLength },
+                (_, index) => index,
+              ),
+            },
+            {
+              field: "id",
+              operator: "in",
+              value: Array.from(
+                { length: secondListLength },
+                (_, index) => index,
+              ),
+            },
+          ],
         },
         FILTER_RESOURCE,
       ),
