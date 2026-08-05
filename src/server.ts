@@ -18,6 +18,21 @@ export interface ServeRestOptions {
   config?: RestConfig;
 }
 
+const START_FAILURE_MESSAGE = "Setupless/rest failed to start and clean up";
+
+async function cleanupAfterStartFailure(
+  error: unknown,
+  cleanup: () => void | Promise<void>,
+): Promise<never> {
+  try {
+    await cleanup();
+  } catch (cleanupError) {
+    throw new AggregateError([error, cleanupError], START_FAILURE_MESSAGE);
+  }
+
+  throw error;
+}
+
 async function closeServerResources(
   app: ReturnType<typeof createRestApp>,
   database: Database,
@@ -74,16 +89,7 @@ export async function serveRest(
     const schema = loadDatabaseSchema(database);
     app = createRestApp({ database, schema });
   } catch (error) {
-    try {
-      database.close();
-    } catch (closeError) {
-      throw new AggregateError(
-        [error, closeError],
-        "Setupless/rest failed to start and clean up",
-      );
-    }
-
-    throw error;
+    return cleanupAfterStartFailure(error, () => database.close());
   }
 
   let stopPromise: Promise<void> | undefined;
@@ -133,15 +139,6 @@ export async function serveRest(
 
     return Object.freeze({ port, stop });
   } catch (error) {
-    try {
-      await stop();
-    } catch (shutdownError) {
-      throw new AggregateError(
-        [error, shutdownError],
-        "Setupless/rest failed to start and clean up",
-      );
-    }
-
-    throw error;
+    return cleanupAfterStartFailure(error, stop);
   }
 }
