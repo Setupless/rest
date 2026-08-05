@@ -130,6 +130,12 @@ function compareStringArrays(
   return left.length - right.length;
 }
 
+function foldSQLiteIdentifier(identifier: string): string {
+  return identifier.replace(/[A-Z]/g, (character) =>
+    String.fromCharCode(character.charCodeAt(0) + 32),
+  );
+}
+
 function loadUniqueConstraints(
   resourceName: string,
   primaryKey: readonly string[],
@@ -196,7 +202,7 @@ function loadUniqueConstraints(
 
 function loadForeignKeys(
   resourceName: string,
-  resources: ReadonlyMap<string, DatabaseResource>,
+  resourcesByIdentifier: ReadonlyMap<string, DatabaseResource>,
   foreignKeyListQuery: NamedPragmaQuery<ForeignKeyRow>,
 ): readonly DatabaseForeignKey[] {
   const rows = foreignKeyListQuery.all(resourceName);
@@ -216,7 +222,12 @@ function loadForeignKeys(
     const constraintRows = unorderedRows.sort(
       (left, right) => left.sequence - right.sequence,
     );
-    const referencedResource = constraintRows[0]?.referenced_resource;
+    const referencedResourceName = constraintRows[0]?.referenced_resource;
+    if (!referencedResourceName) continue;
+
+    const referencedResource = resourcesByIdentifier.get(
+      foldSQLiteIdentifier(referencedResourceName),
+    );
     if (!referencedResource) continue;
 
     const explicitReferencedColumns = constraintRows.map(
@@ -228,10 +239,26 @@ function loadForeignKeys(
     let referencedColumns: readonly string[];
 
     if (namedReferencedColumns.length === explicitReferencedColumns.length) {
-      referencedColumns = Object.freeze(namedReferencedColumns);
+      const referencedColumnsByIdentifier = new Map(
+        referencedResource.columns.map((column) => [
+          foldSQLiteIdentifier(column.name),
+          column.name,
+        ]),
+      );
+      const canonicalReferencedColumns = namedReferencedColumns.map((column) =>
+        referencedColumnsByIdentifier.get(foldSQLiteIdentifier(column)),
+      );
+      if (canonicalReferencedColumns.some((column) => column === undefined)) {
+        continue;
+      }
+
+      referencedColumns = Object.freeze(
+        canonicalReferencedColumns.filter(
+          (column): column is string => column !== undefined,
+        ),
+      );
     } else {
-      const referencedPrimaryKey =
-        resources.get(referencedResource)?.primaryKey;
+      const referencedPrimaryKey = referencedResource.primaryKey;
 
       // SQLite only permits an omitted parent column list when the complete
       // parent primary key has the same arity as the child key.
@@ -252,7 +279,7 @@ function loadForeignKeys(
         fromColumns: Object.freeze(
           constraintRows.map((row) => row.from_column),
         ),
-        referencedResource,
+        referencedResource: referencedResource.name,
         referencedColumns,
       }),
     );
@@ -411,6 +438,12 @@ export function loadDatabaseSchema(database: Database): DatabaseSchema {
       snapshots.set(resource.name, resource);
     }
 
+    const resourcesByIdentifier = new Map(
+      [...snapshots.values()].map((resource) => [
+        foldSQLiteIdentifier(resource.name),
+        resource,
+      ]),
+    );
     const resources = Object.freeze(
       [...snapshots.values()].map((resource) =>
         Object.freeze({
@@ -423,7 +456,7 @@ export function loadDatabaseSchema(database: Database): DatabaseSchema {
           ),
           foreignKeys: loadForeignKeys(
             resource.name,
-            snapshots,
+            resourcesByIdentifier,
             foreignKeyListQuery,
           ),
         }),
