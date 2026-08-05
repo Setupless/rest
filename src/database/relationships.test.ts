@@ -48,6 +48,16 @@ describe("buildRelationshipGraph", () => {
           columnMappings: [{ source: "id", target: "author_id" }],
           hint: "author_id",
         });
+
+        expect(() => graph.resolve("posts", "authors", "missing_hint")).toThrow(
+          expect.objectContaining({
+            code: "SLREST202",
+            status: 400,
+            details:
+              'The inferred relationship from resource "posts" to resource "authors" does not match the supplied hint.',
+            hint: 'Use relationship hint "author_id".',
+          }),
+        );
       },
     );
   });
@@ -157,6 +167,15 @@ describe("buildRelationshipGraph", () => {
           hint: "shipping_address_id",
           columnMappings: [{ source: "id", target: "shipping_address_id" }],
         });
+
+        expect(() =>
+          graph.resolve("orders", "addresses", "missing_hint"),
+        ).toThrow(
+          expect.objectContaining({
+            code: "SLREST203",
+            hint: expect.stringContaining('"billing_address_id"'),
+          }),
+        );
       },
     );
   });
@@ -232,7 +251,7 @@ describe("buildRelationshipGraph", () => {
     );
   });
 
-  it("does not infer many-to-many edges without exact pair uniqueness", () => {
+  it("requires exact, unconditional pair uniqueness for junctions", () => {
     withRelationshipGraph(
       `CREATE TABLE users (id INTEGER PRIMARY KEY);
        CREATE TABLE roles (id INTEGER PRIMARY KEY);
@@ -245,7 +264,15 @@ describe("buildRelationshipGraph", () => {
          role_id INTEGER REFERENCES roles(id),
          scope TEXT,
          PRIMARY KEY (user_id, role_id, scope)
-       );`,
+       );
+       CREATE TABLE partial_memberships (
+         user_id INTEGER REFERENCES users(id),
+         role_id INTEGER REFERENCES roles(id),
+         active INTEGER NOT NULL
+       );
+       CREATE UNIQUE INDEX one_active_membership
+         ON partial_memberships (user_id, role_id)
+         WHERE active = 1;`,
       (graph) => {
         expect(
           graph.listFrom("users").filter(({ kind }) => kind === "many-to-many"),

@@ -263,22 +263,40 @@ function relationshipNotFound(
   });
 }
 
+function formatAvailableHints(
+  relationships: readonly DatabaseRelationship[],
+): string {
+  return [...new Set(relationships.map(({ hint }) => hint))]
+    .sort(compareStrings)
+    .map((hint) => JSON.stringify(hint))
+    .join(", ");
+}
+
+function relationshipHintNotFound(
+  source: string,
+  target: string,
+  relationships: readonly DatabaseRelationship[],
+): RelationshipResolutionError {
+  return new RelationshipResolutionError({
+    code: "SLREST202",
+    status: 400,
+    message: "Relationship not found",
+    details: `The inferred relationship from resource ${JSON.stringify(source)} to resource ${JSON.stringify(target)} does not match the supplied hint.`,
+    hint: `Use relationship hint ${formatAvailableHints(relationships)}.`,
+  });
+}
+
 function ambiguousRelationship(
   source: string,
   target: string,
   relationships: readonly DatabaseRelationship[],
 ): RelationshipResolutionError {
-  const availableHints = [...new Set(relationships.map(({ hint }) => hint))]
-    .sort(compareStrings)
-    .map((hint) => JSON.stringify(hint))
-    .join(", ");
-
   return new RelationshipResolutionError({
     code: "SLREST203",
     status: 300,
     message: "Multiple Choices",
     details: `Multiple inferred relationships exist from resource ${JSON.stringify(source)} to resource ${JSON.stringify(target)}.`,
-    hint: `Use one of these relationship hints: ${availableHints}.`,
+    hint: `Use one of these relationship hints: ${formatAvailableHints(relationships)}.`,
   });
 }
 
@@ -368,6 +386,12 @@ export function buildRelationshipGraph(
       }
       if (matches.length > 1) {
         throw ambiguousRelationship(source, target, matches);
+      }
+      if (candidates.length > 1) {
+        throw ambiguousRelationship(source, target, candidates);
+      }
+      if (candidates.length === 1) {
+        throw relationshipHintNotFound(source, target, candidates);
       }
 
       throw relationshipNotFound(source, target);
