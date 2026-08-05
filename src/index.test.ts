@@ -90,12 +90,16 @@ describe("library entrypoint", () => {
                 sigterm: process.listenerCount("SIGTERM"),
               },
               exports: {
+                andFilters: typeof api.andFilters,
                 buildRelationshipGraph: typeof api.buildRelationshipGraph,
+                compileRestFilter: typeof api.compileRestFilter,
                 createRestApp: typeof api.createRestApp,
                 negotiateResponseMediaType: typeof api.negotiateResponseMediaType,
+                parseRestFilters: typeof api.parseRestFilters,
                 parsePreferences: typeof api.parsePreferences,
                 serveRest: typeof api.serveRest,
                 toErrorResponse: typeof api.toErrorResponse,
+                validateRestFilter: typeof api.validateRestFilter,
               },
             }));
           `,
@@ -125,12 +129,16 @@ describe("library entrypoint", () => {
         before: { sigint: 0, sigterm: 0 },
         after: { sigint: 0, sigterm: 0 },
         exports: {
+          andFilters: "function",
           buildRelationshipGraph: "function",
+          compileRestFilter: "function",
           createRestApp: "function",
           negotiateResponseMediaType: "function",
+          parseRestFilters: "function",
           parsePreferences: "function",
           serveRest: "function",
           toErrorResponse: "function",
+          validateRestFilter: "function",
         },
       });
       expect(existsSync(importDatabasePath)).toBe(false);
