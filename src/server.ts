@@ -82,7 +82,10 @@ export async function serveRest(
   options: ServeRestOptions = {},
 ): Promise<RunningRestServer> {
   const config = options.config ?? loadConfig();
-  const database = openDatabase(config.databasePath);
+  const database = openDatabase({
+    path: config.databasePath,
+    busyTimeoutMs: config.busyTimeoutMs,
+  });
   let app: ReturnType<typeof createRestApp>;
 
   try {
@@ -124,7 +127,7 @@ export async function serveRest(
   }
 
   try {
-    app.listen(config.port);
+    app.listen({ hostname: config.host, port: config.port });
 
     const port = app.server?.port;
 
@@ -135,7 +138,7 @@ export async function serveRest(
     process.on("SIGINT", onSigint);
     process.on("SIGTERM", onSigterm);
 
-    console.log(`Setupless/rest is running at http://localhost:${port}`);
+    console.log(`Setupless/rest is running on ${config.host}:${port}`);
 
     return Object.freeze({ port, stop });
   } catch (error) {

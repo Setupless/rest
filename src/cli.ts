@@ -1,8 +1,15 @@
+import { loadConfig } from "./config";
 import { serveRest } from "./server";
 
 if (import.meta.main) {
   try {
-    await serveRest();
+    const config = loadConfig();
+
+    if (!config.apiKey) {
+      throw Error("SETUPLESS_REST_API_KEY is required and must not be blank");
+    }
+
+    await serveRest({ config });
   } catch (error) {
     console.error("Failed to start Setupless/rest", error);
     process.exitCode = 1;
