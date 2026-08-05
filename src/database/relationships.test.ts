@@ -54,7 +54,7 @@ describe("buildRelationshipGraph", () => {
             code: "SLREST202",
             status: 400,
             details:
-              'The inferred relationship from resource "posts" to resource "authors" does not match the supplied hint.',
+              'No inferred relationship from resource "posts" to resource "authors" matches the supplied hint.',
             hint: 'Use relationship hint "author_id".',
           }),
         );
@@ -172,8 +172,10 @@ describe("buildRelationshipGraph", () => {
           graph.resolve("orders", "addresses", "missing_hint"),
         ).toThrow(
           expect.objectContaining({
-            code: "SLREST203",
-            hint: expect.stringContaining('"billing_address_id"'),
+            code: "SLREST202",
+            details:
+              'No inferred relationship from resource "orders" to resource "addresses" matches the supplied hint.',
+            hint: 'Use one of these relationship hints: "billing_address_id", "shipping_address_id".',
           }),
         );
       },
