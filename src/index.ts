@@ -11,6 +11,18 @@ export {
   openDatabase,
 } from "./database/database";
 export {
+  buildRelationshipGraph,
+  type ColumnMapping,
+  type DatabaseRelationship,
+  type DatabaseRelationshipGraph,
+  type DirectRelationship,
+  type InverseRelationship,
+  type JunctionRelationshipMetadata,
+  type ManyToManyRelationship,
+  RelationshipResolutionError,
+  type RelationshipResolutionErrorCode,
+} from "./database/relationships";
+export {
   type DatabaseColumn,
   type DatabaseForeignKey,
   type DatabaseResource,

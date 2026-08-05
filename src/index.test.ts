@@ -21,6 +21,7 @@ describe("GET /health", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: "ok" });
+    expect(Object.isFrozen(fixture.app.decorator.relationships)).toBe(true);
   });
 
   it("runs against the seeded SQLite database without opening a port", () => {
@@ -89,6 +90,7 @@ describe("library entrypoint", () => {
                 sigterm: process.listenerCount("SIGTERM"),
               },
               exports: {
+                buildRelationshipGraph: typeof api.buildRelationshipGraph,
                 createRestApp: typeof api.createRestApp,
                 serveRest: typeof api.serveRest,
               },
@@ -119,7 +121,11 @@ describe("library entrypoint", () => {
       expect(JSON.parse(stdout)).toEqual({
         before: { sigint: 0, sigterm: 0 },
         after: { sigint: 0, sigterm: 0 },
-        exports: { createRestApp: "function", serveRest: "function" },
+        exports: {
+          buildRelationshipGraph: "function",
+          createRestApp: "function",
+          serveRest: "function",
+        },
       });
       expect(existsSync(importDatabasePath)).toBe(false);
     } finally {
