@@ -1,3 +1,4 @@
+import { RestError } from "../http/errors";
 import type {
   DatabaseForeignKey,
   DatabaseResource,
@@ -47,25 +48,14 @@ export type DatabaseRelationship =
 export type RelationshipResolutionErrorCode = "SLREST202" | "SLREST203";
 
 /** A safe, transport-ready failure produced while resolving a relationship. */
-export class RelationshipResolutionError extends Error {
-  readonly code: RelationshipResolutionErrorCode;
-  readonly status: 300 | 400;
-  readonly details: string;
-  readonly hint: string | null;
-
+export class RelationshipResolutionError extends RestError<RelationshipResolutionErrorCode> {
   constructor(options: {
     code: RelationshipResolutionErrorCode;
-    status: 300 | 400;
-    message: string;
     details: string;
     hint: string | null;
   }) {
-    super(options.message);
+    super(options.code, { details: options.details, hint: options.hint });
     this.name = "RelationshipResolutionError";
-    this.code = options.code;
-    this.status = options.status;
-    this.details = options.details;
-    this.hint = options.hint;
   }
 }
 
@@ -256,8 +246,6 @@ function relationshipNotFound(
 ): RelationshipResolutionError {
   return new RelationshipResolutionError({
     code: "SLREST202",
-    status: 400,
-    message: "Relationship not found",
     details: `No inferred relationship exists from resource ${JSON.stringify(source)} to resource ${JSON.stringify(target)}.`,
     hint: null,
   });
@@ -281,8 +269,6 @@ function relationshipHintNotFound(
 
   return new RelationshipResolutionError({
     code: "SLREST202",
-    status: 400,
-    message: "Relationship not found",
     details: `No inferred relationship from resource ${JSON.stringify(source)} to resource ${JSON.stringify(target)} matches the supplied hint.`,
     hint:
       relationships.length === 1
@@ -298,8 +284,6 @@ function ambiguousRelationship(
 ): RelationshipResolutionError {
   return new RelationshipResolutionError({
     code: "SLREST203",
-    status: 300,
-    message: "Multiple Choices",
     details: `Multiple inferred relationships exist from resource ${JSON.stringify(source)} to resource ${JSON.stringify(target)}.`,
     hint: `Use one of these relationship hints: ${formatAvailableHints(relationships)}.`,
   });

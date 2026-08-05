@@ -92,7 +92,10 @@ describe("library entrypoint", () => {
               exports: {
                 buildRelationshipGraph: typeof api.buildRelationshipGraph,
                 createRestApp: typeof api.createRestApp,
+                negotiateResponseMediaType: typeof api.negotiateResponseMediaType,
+                parsePreferences: typeof api.parsePreferences,
                 serveRest: typeof api.serveRest,
+                toErrorResponse: typeof api.toErrorResponse,
               },
             }));
           `,
@@ -124,7 +127,10 @@ describe("library entrypoint", () => {
         exports: {
           buildRelationshipGraph: "function",
           createRestApp: "function",
+          negotiateResponseMediaType: "function",
+          parsePreferences: "function",
           serveRest: "function",
+          toErrorResponse: "function",
         },
       });
       expect(existsSync(importDatabasePath)).toBe(false);
