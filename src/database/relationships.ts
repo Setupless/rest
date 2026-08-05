@@ -277,12 +277,17 @@ function relationshipHintNotFound(
   target: string,
   relationships: readonly DatabaseRelationship[],
 ): RelationshipResolutionError {
+  const availableHints = formatAvailableHints(relationships);
+
   return new RelationshipResolutionError({
     code: "SLREST202",
     status: 400,
     message: "Relationship not found",
-    details: `The inferred relationship from resource ${JSON.stringify(source)} to resource ${JSON.stringify(target)} does not match the supplied hint.`,
-    hint: `Use relationship hint ${formatAvailableHints(relationships)}.`,
+    details: `No inferred relationship from resource ${JSON.stringify(source)} to resource ${JSON.stringify(target)} matches the supplied hint.`,
+    hint:
+      relationships.length === 1
+        ? `Use relationship hint ${availableHints}.`
+        : `Use one of these relationship hints: ${availableHints}.`,
   });
 }
 
@@ -387,11 +392,11 @@ export function buildRelationshipGraph(
       if (matches.length > 1) {
         throw ambiguousRelationship(source, target, matches);
       }
+      if (hint !== undefined && candidates.length > 0) {
+        throw relationshipHintNotFound(source, target, candidates);
+      }
       if (candidates.length > 1) {
         throw ambiguousRelationship(source, target, candidates);
-      }
-      if (candidates.length === 1) {
-        throw relationshipHintNotFound(source, target, candidates);
       }
 
       throw relationshipNotFound(source, target);
