@@ -65,7 +65,7 @@ describe("compileRestFilter", () => {
         "r",
       ),
     ).toEqual({
-      sql: '"r"."title" LIKE ? COLLATE NOCASE',
+      sql: 'LOWER("r"."title") LIKE LOWER(?)',
       parameters: ["write%"],
     });
   });
@@ -163,6 +163,30 @@ describe("compileRestFilter", () => {
 
       expect(rows).toEqual([]);
       expect(compiled.sql).not.toContain("Alice");
+    });
+
+    it("keeps ilike case-insensitive when SQLite case-sensitive LIKE is enabled", () => {
+      const users = fixture.schema.getResource("users");
+      if (!users) throw Error("users fixture is unavailable");
+      const filter: RestFilter = {
+        field: "name",
+        operator: "ilike",
+        value: "alice*",
+      };
+      const compiled = compileRestFilter(filter, users, "u");
+
+      fixture.database.exec("PRAGMA case_sensitive_like = ON");
+      try {
+        const rows = fixture.database
+          .query<{ name: string }, string[]>(
+            `SELECT "u"."name" FROM "users" AS "u" WHERE ${compiled.sql}`,
+          )
+          .all(...(compiled.parameters as string[]));
+
+        expect(rows).toEqual([{ name: "Alice Johnson" }]);
+      } finally {
+        fixture.database.exec("PRAGMA case_sensitive_like = OFF");
+      }
     });
 
     it("rejects hostile fields before a statement can be prepared", () => {

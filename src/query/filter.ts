@@ -31,6 +31,7 @@ export interface CompiledSql {
 }
 
 export const DEFAULT_FILTER_MAX_DEPTH = 5;
+export const MAX_FILTER_IN_VALUES = 500;
 
 const COMPARISON_OPERATORS = new Set<RestComparisonOperator>([
   "eq",
@@ -90,13 +91,26 @@ export function filterDepthExceeded(maxDepth: number): RestError<"SLREST110"> {
   });
 }
 
-function unknownColumn(
+/** @internal Creates the shared unknown-column failure. */
+export function unknownColumn(
   resource: DatabaseResource,
   field: string,
 ): RestError<"SLREST101"> {
   return new RestError("SLREST101", {
     details: `Column ${JSON.stringify(field)} does not exist on resource ${JSON.stringify(resource.name)}.`,
   });
+}
+
+/** @internal Enforces the shared SQLite-safe bound for an in value list. */
+export function assertFilterInListLength(length: number): void {
+  if (length === 0) {
+    throw invalidFilter("The in operator requires a non-empty value list.");
+  }
+  if (length > MAX_FILTER_IN_VALUES) {
+    throw invalidFilter(
+      `The in operator accepts at most ${MAX_FILTER_IN_VALUES} values.`,
+    );
+  }
 }
 
 function normalizedDeclaredType(column: DatabaseColumn): string {
@@ -391,11 +405,10 @@ function validateNode(
       if (!column) throw unknownColumn(resource, node.field);
 
       if (operator === "in") {
-        if (!Array.isArray(node.value) || node.value.length === 0) {
-          throw invalidFilter(
-            "The in operator requires a non-empty value list.",
-          );
+        if (!Array.isArray(node.value)) {
+          throw invalidFilter("The in operator requires a value list.");
         }
+        assertFilterInListLength(node.value.length);
         for (const item of node.value) {
           assertScalar(item);
           if (item === null) {

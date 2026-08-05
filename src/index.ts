@@ -57,6 +57,7 @@ export {
   andFilters,
   type CompiledSql,
   DEFAULT_FILTER_MAX_DEPTH,
+  MAX_FILTER_IN_VALUES,
   type RestComparisonOperator,
   type RestFilter,
   type RestScalar,
