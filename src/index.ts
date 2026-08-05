@@ -54,6 +54,17 @@ export {
   type RestPreferences,
 } from "./http/preferences";
 export {
+  andFilters,
+  type CompiledSql,
+  DEFAULT_FILTER_MAX_DEPTH,
+  type RestComparisonOperator,
+  type RestFilter,
+  type RestScalar,
+  validateRestFilter,
+} from "./query/filter";
+export { compileRestFilter } from "./query/filter-compiler";
+export { parseRestFilters } from "./query/filter-parser";
+export {
   type RunningRestServer,
   type ServeRestOptions,
   serveRest,
