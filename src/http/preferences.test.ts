@@ -186,39 +186,37 @@ describe("getPreferenceApplied", () => {
   });
 
   it.each([
-    ["GET", "handling=strict, count=exact"],
-    ["HEAD", "handling=strict, count=exact"],
+    ["GET", "handling=strict, count=exact", "handling=strict, count=exact"],
+    ["HEAD", "handling=strict, count=exact", "handling=strict, count=exact"],
     [
       "POST",
+      "handling=strict, return=representation, count=exact, missing=default, resolution=ignore-duplicates",
       "handling=strict, return=representation, count=exact, missing=default, resolution=ignore-duplicates",
     ],
     [
       "PATCH",
       "handling=strict, return=representation, count=exact, max-affected=5",
+      "handling=strict, return=representation, count=exact, max-affected=5",
     ],
     [
       "DELETE",
+      "handling=strict, return=representation, count=exact, max-affected=5",
       "handling=strict, return=representation, count=exact, max-affected=5",
     ],
     [
       "PUT",
       "handling=strict, return=representation, count=exact, missing=default",
+      "handling=strict, return=representation, count=exact, missing=default",
     ],
-  ] as const)("applies the contract subset for %s", (context, expected) => {
-    const preferences = parsePreferences(
-      prefer(
-        context === "GET" || context === "HEAD"
-          ? "handling=strict, count=exact"
-          : context === "POST"
-            ? "handling=strict, return=representation, count=exact, missing=default, resolution=ignore-duplicates"
-            : context === "PUT"
-              ? "handling=strict, return=representation, count=exact, missing=default"
-              : "handling=strict, return=representation, count=exact, max-affected=5",
-      ),
-    );
+    ["health", "count=exact", null],
+  ] as const)(
+    "applies the contract subset for %s",
+    (context, header, expected) => {
+      const preferences = parsePreferences(prefer(header));
 
-    expect(getPreferenceApplied(preferences, context)).toBe(expected);
-  });
+      expect(getPreferenceApplied(preferences, context)).toBe(expected);
+    },
+  );
 
   it("requires the original parsed object so explicit defaults stay traceable", () => {
     expect(() =>
