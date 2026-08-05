@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { FILTER_RESOURCE } from "../../test/filter-fixture";
-import { RestError } from "../http/errors";
-import { andFilters, type RestFilter, validateRestFilter } from "./filter";
+import {
+  andFilters,
+  MAX_FILTER_IN_VALUES,
+  type RestFilter,
+  validateRestFilter,
+} from "./filter";
 
 describe("validateRestFilter", () => {
   it.each([
@@ -37,17 +41,30 @@ describe("validateRestFilter", () => {
     [{ field: "done", operator: "eq", value: 1 }, "SLREST102"],
     [{ field: "title", operator: "is", value: false }, "SLREST102"],
     [{ field: "title", operator: "in", value: [] }, "SLREST102"],
+    [{ field: "title", operator: "in", value: ["a", null] }, "SLREST102"],
     [{ field: "title", operator: "eq", value: ["value"] }, "SLREST102"],
     [{ and: [] }, "SLREST102"],
     [{ field: "id", operator: "eq", value: 1, rawSql: "1=1" }, "SLREST102"],
   ] as const)("rejects an invalid plugin AST %#", (filter, code) => {
-    try {
-      validateRestFilter(filter as unknown as RestFilter, FILTER_RESOURCE);
-      throw Error("expected validation to fail");
-    } catch (error) {
-      expect(error).toBeInstanceOf(RestError);
-      expect((error as RestError).code).toBe(code);
-    }
+    expect(() =>
+      validateRestFilter(filter as unknown as RestFilter, FILTER_RESOURCE),
+    ).toThrow(expect.objectContaining({ code }));
+  });
+
+  it("rejects in lists before they can exceed the shared parameter bound", () => {
+    expect(() =>
+      validateRestFilter(
+        {
+          field: "id",
+          operator: "in",
+          value: Array.from(
+            { length: MAX_FILTER_IN_VALUES + 1 },
+            (_, index) => index,
+          ),
+        },
+        FILTER_RESOURCE,
+      ),
+    ).toThrow(expect.objectContaining({ code: "SLREST102" }));
   });
 
   it("rejects cyclic plugin filters without recursing indefinitely", () => {

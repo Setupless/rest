@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { FILTER_RESOURCE } from "../../test/filter-fixture";
-import { RestError } from "../http/errors";
+import { MAX_FILTER_IN_VALUES } from "./filter";
 import { parseRestFilters } from "./filter-parser";
 
 function params(name: string, value: string): URLSearchParams {
@@ -146,16 +146,23 @@ describe("parseRestFilters", () => {
   });
 
   it("uses the stable unknown-column error without treating input as SQL", () => {
-    try {
+    expect(() =>
       parseRestFilters(
         params('id"; DROP TABLE records; --', "eq.1"),
         FILTER_RESOURCE,
-      );
-      throw Error("expected parsing to fail");
-    } catch (error) {
-      expect(error).toBeInstanceOf(RestError);
-      expect((error as RestError).code).toBe("SLREST101");
-    }
+      ),
+    ).toThrow(expect.objectContaining({ code: "SLREST101" }));
+  });
+
+  it("rejects oversized URL in lists before coercing or compiling them", () => {
+    const values = Array.from(
+      { length: MAX_FILTER_IN_VALUES + 1 },
+      (_, index) => index,
+    ).join(",");
+
+    expect(() =>
+      parseRestFilters(params("id", `in.(${values})`), FILTER_RESOURCE),
+    ).toThrow(expect.objectContaining({ code: "SLREST102" }));
   });
 
   it("enforces the configured Boolean nesting limit", () => {
@@ -166,5 +173,15 @@ describe("parseRestFilters", () => {
         2,
       ),
     ).toThrow(expect.objectContaining({ code: "SLREST110" }));
+  });
+
+  it("accounts for the implicit AND before parsing nested parameters", () => {
+    const searchParams = new URLSearchParams();
+    searchParams.append("not", "(not(id.eq.1))");
+    searchParams.append("title", "eq.safe");
+
+    expect(() => parseRestFilters(searchParams, FILTER_RESOURCE, 2)).toThrow(
+      expect.objectContaining({ code: "SLREST110" }),
+    );
   });
 });

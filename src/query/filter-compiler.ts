@@ -61,7 +61,6 @@ function compileComparison(
   };
   const operator = operators[filter.operator];
   const parameter = parameterExpression(column);
-  const collation = filter.operator === "ilike" ? " COLLATE NOCASE" : "";
   if (
     (filter.operator === "like" || filter.operator === "ilike") &&
     typeof parameters[parameters.length - 1] === "string"
@@ -70,7 +69,10 @@ function compileComparison(
       parameters[parameters.length - 1] as string
     ).replaceAll("*", "%");
   }
-  return `${identifier} ${operator} ${parameter}${collation}`;
+  if (filter.operator === "ilike") {
+    return `LOWER(${identifier}) ${operator} LOWER(${parameter})`;
+  }
+  return `${identifier} ${operator} ${parameter}`;
 }
 
 function compileNode(

@@ -1,7 +1,7 @@
 import type { DatabaseColumn, DatabaseResource } from "../database/schema";
-import { RestError } from "../http/errors";
 import {
   andFilters,
+  assertFilterInListLength,
   coerceFilterValue,
   DEFAULT_FILTER_MAX_DEPTH,
   filterDepthExceeded,
@@ -10,6 +10,7 @@ import {
   type RestComparisonOperator,
   type RestFilter,
   type RestScalar,
+  unknownColumn,
   validateRestFilter,
 } from "./filter";
 
@@ -32,12 +33,6 @@ const OPERATORS = new Set<RestComparisonOperator>([
   "in",
   "is",
 ]);
-
-function unknownColumn(resource: DatabaseResource, field: string): RestError {
-  return new RestError("SLREST101", {
-    details: `Column ${JSON.stringify(field)} does not exist on resource ${JSON.stringify(resource.name)}.`,
-  });
-}
 
 function freezeScalarFilter(
   column: DatabaseColumn,
@@ -158,6 +153,7 @@ function parseInValues(value: string): readonly string[] {
     }
   }
 
+  assertFilterInListLength(items.length);
   return Object.freeze(items);
 }
 
@@ -287,12 +283,17 @@ export function parseRestFilters(
   }
 
   const filters: RestFilter[] = [];
-  for (const [name, value] of searchParams) {
-    if (QUERY_CONTROLS.has(name)) continue;
+  const entries = [...searchParams].filter(
+    ([name]) => !QUERY_CONTROLS.has(name),
+  );
+  const rootDepth = entries.length > 1 ? 1 : 0;
+  if (rootDepth > maxDepth) throw filterDepthExceeded(maxDepth);
+
+  for (const [name, value] of entries) {
     if (name === "and" || name === "or" || name === "not") {
-      filters.push(parseGroup(name, value, resource, 0, maxDepth));
+      filters.push(parseGroup(name, value, resource, rootDepth, maxDepth));
     } else {
-      filters.push(parseComparison(name, value, resource, 0, maxDepth));
+      filters.push(parseComparison(name, value, resource, rootDepth, maxDepth));
     }
   }
 
