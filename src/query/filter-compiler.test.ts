@@ -186,7 +186,7 @@ describe("compileRestFilter", () => {
       };
       const compiled = compileRestFilter(filter, users, "u");
 
-      fixture.database.exec("PRAGMA case_sensitive_like = ON");
+      fixture.database.run("PRAGMA case_sensitive_like = ON");
       try {
         const rows = fixture.database
           .query<{ name: string }, string[]>(
@@ -196,7 +196,7 @@ describe("compileRestFilter", () => {
 
         expect(rows).toEqual([{ name: "Alice Johnson" }]);
       } finally {
-        fixture.database.exec("PRAGMA case_sensitive_like = OFF");
+        fixture.database.run("PRAGMA case_sensitive_like = OFF");
       }
     });
 
