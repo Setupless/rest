@@ -1,6 +1,7 @@
 import { Elysia } from "elysia";
 import { createAuthorizationResolver } from "./auth/authorize";
 import type { RestAuthPlugin } from "./auth/types";
+import { DEFAULT_MAX_EMBED_DEPTH, DEFAULT_MAX_ROWS } from "./config";
 import type { Database } from "./database/database";
 import { buildRelationshipGraph } from "./database/relationships";
 import type { DatabaseSchema } from "./database/schema";
@@ -22,8 +23,8 @@ export function createRestApp({
   schema,
   auth,
   maxFilterDepth,
-  maxRows = 1000,
-  maxEmbedDepth = 5,
+  maxRows = DEFAULT_MAX_ROWS,
+  maxEmbedDepth = DEFAULT_MAX_EMBED_DEPTH,
 }: AppDependencies) {
   const relationships = buildRelationshipGraph(schema);
   const authorization = createAuthorizationResolver(

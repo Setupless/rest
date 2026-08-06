@@ -19,6 +19,9 @@ type Environment = Record<string, string | undefined>;
 
 const LOG_LEVELS = new Set<RestLogLevel>(["debug", "info", "warn", "error"]);
 
+export const DEFAULT_MAX_ROWS = 1000;
+export const DEFAULT_MAX_EMBED_DEPTH = 5;
+
 function configError(variable: string, rule: string): Error {
   return Error(`${variable} ${rule}`);
 }
@@ -150,8 +153,14 @@ export function loadConfig(env: Environment = process.env): RestConfig {
     host: parseHost(env.HOST),
     port: parseInteger(env, "PORT", 3000, 1, 65_535),
     ...(apiKey ? { apiKey } : {}),
-    maxRows: parseInteger(env, "MAX_ROWS", 1000, 1, 1_000_000),
-    maxEmbedDepth: parseInteger(env, "MAX_EMBED_DEPTH", 5, 0, 20),
+    maxRows: parseInteger(env, "MAX_ROWS", DEFAULT_MAX_ROWS, 1, 1_000_000),
+    maxEmbedDepth: parseInteger(
+      env,
+      "MAX_EMBED_DEPTH",
+      DEFAULT_MAX_EMBED_DEPTH,
+      0,
+      20,
+    ),
     maxBodyBytes: parseInteger(
       env,
       "MAX_BODY_BYTES",

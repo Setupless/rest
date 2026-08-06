@@ -83,7 +83,7 @@ function getResourceName(request: Request): string {
   }
 }
 
-function getAllow(resource: DatabaseResource): string {
+function getOptionsAllow(resource: DatabaseResource): string {
   return resource.writable ? WRITABLE_METHODS : READ_ONLY_METHODS;
 }
 
@@ -158,10 +158,14 @@ async function handleRead(
     operation: "select",
     ...(query.filter === undefined ? {} : { clientFilter: query.filter }),
   });
+  const executionQuery =
+    query.singular && query.limit > 2
+      ? Object.freeze({ ...query, limit: 2 })
+      : query;
   const result = executeRead(
     dependencies.database,
     resource,
-    query,
+    executionQuery,
     authorization,
   );
   const representation = query.singular ? singularResult(result) : result.rows;
@@ -201,7 +205,7 @@ export function createResourceRequestHandler(
         getPreferenceApplied(preferences, "OPTIONS");
         return new Response(null, {
           status: 204,
-          headers: { Allow: getAllow(resource), "X-Request-Id": id },
+          headers: { Allow: getOptionsAllow(resource), "X-Request-Id": id },
         });
       }
       if (request.method === "GET" || request.method === "HEAD") {
@@ -210,7 +214,7 @@ export function createResourceRequestHandler(
 
       throw new RestError("SLREST204", {
         details: `Method ${request.method} is not available for resource ${JSON.stringify(resource.name)}.`,
-        headers: { Allow: getAllow(resource) },
+        headers: { Allow: READ_ONLY_METHODS },
       });
     } catch (error) {
       return toErrorResponse(error, id);

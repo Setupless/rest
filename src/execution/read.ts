@@ -47,9 +47,6 @@ export function executeRead(
 ): ReadExecutionResult {
   const compiled = compileReadSql(resource, query, authorization);
   const read = database.transaction((): ReadExecutionResult => {
-    const rawRows = database
-      .query<SqlRow, SQLQueryBindings[]>(compiled.rowsSql)
-      .all(...compiled.rowParameters);
     let total: number | null = null;
 
     if (query.countExact) {
@@ -73,6 +70,10 @@ export function executeRead(
         headers: { "Content-Range": `*/${total}` },
       });
     }
+
+    const rawRows = database
+      .query<SqlRow, SQLQueryBindings[]>(compiled.rowsSql)
+      .all(...compiled.rowParameters);
 
     const rows = Object.freeze(
       rawRows.map((rawRow) => {
