@@ -122,17 +122,27 @@ function assignScopedParameters(
     ["", new URLSearchParams()],
   ]);
   for (const path of scopes.keys()) parameters.set(path, new URLSearchParams());
-  const paths = [...scopes.keys()].sort(
-    (left, right) => right.length - left.length,
-  );
 
   for (const [name, value] of searchParams) {
-    const path = paths.find((candidate) => name.startsWith(`${candidate}.`));
-    if (path === undefined) {
-      parameters.get("")?.append(name, value);
-    } else {
-      parameters.get(path)?.append(name.slice(path.length + 1), value);
+    let path = "";
+    for (
+      let dot = name.lastIndexOf(".");
+      dot > 0;
+      dot = name.lastIndexOf(".", dot - 1)
+    ) {
+      const candidate = name.slice(0, dot);
+      if (scopes.has(candidate)) {
+        path = candidate;
+        break;
+      }
     }
+    const target = parameters.get(path);
+    if (target === undefined) {
+      throw invalidQueryControl(
+        `Embedded control path ${JSON.stringify(path)} is unknown.`,
+      );
+    }
+    target.append(path ? name.slice(path.length + 1) : name, value);
   }
   return parameters;
 }
