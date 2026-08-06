@@ -69,8 +69,8 @@ function initialiseDatabase(
     }
   }
 
-  database.exec("PRAGMA foreign_keys = ON");
-  database.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
+  database.run("PRAGMA foreign_keys = ON");
+  database.run(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
 
   const foreignKeys = database
     .query<ForeignKeysRow, []>("PRAGMA foreign_keys")

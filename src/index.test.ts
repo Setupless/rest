@@ -22,6 +22,7 @@ describe("GET /health", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ status: "ok" });
     expect(Object.isFrozen(fixture.app.decorator.relationships)).toBe(true);
+    expect(fixture.app.decorator.authorization.mode).toBe("none");
   });
 
   it("runs against the seeded SQLite database without opening a port", () => {
@@ -93,6 +94,8 @@ describe("library entrypoint", () => {
                 andFilters: typeof api.andFilters,
                 buildRelationshipGraph: typeof api.buildRelationshipGraph,
                 compileRestFilter: typeof api.compileRestFilter,
+                createApiKeyAuth: typeof api.createApiKeyAuth,
+                createAuthorizationResolver: typeof api.createAuthorizationResolver,
                 createRestApp: typeof api.createRestApp,
                 negotiateResponseMediaType: typeof api.negotiateResponseMediaType,
                 parseRestFilters: typeof api.parseRestFilters,
@@ -132,6 +135,8 @@ describe("library entrypoint", () => {
           andFilters: "function",
           buildRelationshipGraph: "function",
           compileRestFilter: "function",
+          createApiKeyAuth: "function",
+          createAuthorizationResolver: "function",
           createRestApp: "function",
           negotiateResponseMediaType: "function",
           parseRestFilters: "function",
@@ -207,6 +212,7 @@ describe("server lifecycle", () => {
       const initialSigtermListeners = process.listenerCount("SIGTERM");
       server = await serveRest({
         config: { ...loadConfig({ DATABASE_PATH: databasePath }), port: 0 },
+        auth: { authorize: () => ({ allowed: true }) },
       });
 
       expect(server.port).toBeGreaterThan(0);
@@ -242,6 +248,7 @@ describe("server lifecycle", () => {
       await expect(
         serveRest({
           config: loadConfig({ DATABASE_PATH: databasePath }),
+          auth: { authorize: () => ({ allowed: true }) },
         }),
       ).rejects.toThrow("DATABASE_PATH parent directory must already exist");
       expect(existsSync(missingParent)).toBe(false);
@@ -249,6 +256,50 @@ describe("server lifecycle", () => {
       expect(process.listenerCount("SIGTERM")).toBe(initialSigtermListeners);
     } finally {
       rmSync(testDatabase.directoryPath, { force: true, recursive: true });
+    }
+  });
+
+  it("requires an API key or programmatic plugin before opening a database", async () => {
+    const testDatabase = createTestDatabase();
+    const databasePath = join(
+      testDatabase.directoryPath,
+      "auth-required-before-open.sqlite",
+    );
+    testDatabase.database.close();
+
+    try {
+      await expect(
+        serveRest({ config: loadConfig({ DATABASE_PATH: databasePath }) }),
+      ).rejects.toThrow("requires SETUPLESS_REST_API_KEY or an auth plugin");
+      expect(existsSync(databasePath)).toBe(false);
+    } finally {
+      rmSync(testDatabase.directoryPath, { force: true, recursive: true });
+    }
+  });
+
+  it("starts with only a configured stock API key", async () => {
+    const testDatabase = createTestDatabase();
+    const { databasePath, directoryPath } = testDatabase;
+    testDatabase.database.close();
+    let server: Awaited<ReturnType<typeof serveRest>> | undefined;
+
+    try {
+      server = await serveRest({
+        config: {
+          ...loadConfig({
+            DATABASE_PATH: databasePath,
+            SETUPLESS_REST_API_KEY: "test-key",
+          }),
+          port: 0,
+        },
+      });
+
+      expect(server.port).toBeGreaterThan(0);
+      const response = await fetch(`http://localhost:${server.port}/health`);
+      expect(response.status).toBe(200);
+    } finally {
+      await server?.stop();
+      rmSync(directoryPath, { force: true, recursive: true });
     }
   });
 });

@@ -160,7 +160,7 @@ describe("loadDatabaseSchema", () => {
     const users = fixture.schema.getResource("users");
     const resources = fixture.schema.listResources();
 
-    fixture.database.exec("CREATE TABLE added_after_startup (id INTEGER)");
+    fixture.database.run("CREATE TABLE added_after_startup (id INTEGER)");
 
     expect(fixture.schema.getResource("added_after_startup")).toBeUndefined();
     expect(fixture.schema.getResource("users")).toBe(users);
@@ -171,7 +171,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TEMP TABLE users (
           temporary_key TEXT PRIMARY KEY,
           temporary_value BLOB UNIQUE
@@ -205,7 +205,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TABLE memberships (
           account_id TEXT NOT NULL,
           user_id INTEGER NOT NULL,
@@ -241,7 +241,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TABLE unique_examples (
           id INTEGER PRIMARY KEY,
           tenant TEXT,
@@ -277,7 +277,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TABLE "Organizations" (
           "Tenant" TEXT NOT NULL,
           "Slug" TEXT NOT NULL,
@@ -348,7 +348,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TABLE "Ä" (id INTEGER PRIMARY KEY);
         CREATE TABLE "ä" (code TEXT PRIMARY KEY);
         CREATE TABLE non_ascii_references (
@@ -386,7 +386,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(
+      testDatabase.database.run(
         "CREATE VIRTUAL TABLE documents USING fts5(title, body)",
       );
 
@@ -422,7 +422,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TABLE measurements (
           value INTEGER NOT NULL,
           doubled INTEGER GENERATED ALWAYS AS (value * 2) VIRTUAL,
@@ -471,7 +471,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TABLE ordinary_table (value TEXT);
         CREATE TABLE strict_table (code TEXT PRIMARY KEY) STRICT;
         CREATE TABLE without_rowid_table (
@@ -506,7 +506,7 @@ describe("loadDatabaseSchema", () => {
     const testDatabase = createTestDatabase();
 
     try {
-      testDatabase.database.exec(`
+      testDatabase.database.run(`
         CREATE TABLE nullable_text_key (code TEXT PRIMARY KEY);
         CREATE TABLE nullable_composite_key (
           first INTEGER,
