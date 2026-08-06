@@ -1,4 +1,6 @@
 import { createRestApp } from "./app";
+import { createApiKeyAuth } from "./auth/api-key";
+import type { RestAuthPlugin } from "./auth/types";
 import { loadConfig, type RestConfig } from "./config";
 import {
   bunSQLiteConstants,
@@ -16,6 +18,7 @@ export interface RunningRestServer {
 /** Overrides for starting a server programmatically. */
 export interface ServeRestOptions {
   config?: RestConfig;
+  auth?: RestAuthPlugin;
 }
 
 const START_FAILURE_MESSAGE = "Setupless/rest failed to start and clean up";
@@ -82,6 +85,16 @@ export async function serveRest(
   options: ServeRestOptions = {},
 ): Promise<RunningRestServer> {
   const config = options.config ?? loadConfig();
+  const auth =
+    options.auth ??
+    (config.apiKey === undefined ? undefined : createApiKeyAuth(config.apiKey));
+
+  if (!auth) {
+    throw Error(
+      "Programmatic startup requires SETUPLESS_REST_API_KEY or an auth plugin",
+    );
+  }
+
   const database = openDatabase({
     path: config.databasePath,
     busyTimeoutMs: config.busyTimeoutMs,
@@ -90,7 +103,12 @@ export async function serveRest(
 
   try {
     const schema = loadDatabaseSchema(database);
-    app = createRestApp({ database, schema });
+    app = createRestApp({
+      database,
+      schema,
+      auth,
+      maxFilterDepth: config.maxEmbedDepth,
+    });
   } catch (error) {
     return cleanupAfterStartFailure(error, () => database.close());
   }
