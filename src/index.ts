@@ -45,6 +45,10 @@ export {
   type SQLiteAffinity,
 } from "./database/schema";
 export {
+  executeRead,
+  type ReadExecutionResult,
+} from "./execution/read";
+export {
   createRestError,
   REST_ERROR_DEFINITIONS,
   RestError,
@@ -83,8 +87,10 @@ export type { PaginationSource } from "./query/pagination";
 export {
   parseRestQuery,
   type RestQuery,
+  type RestQueryConfig,
   type SelectionNode,
 } from "./query/query";
+export { serializeSQLiteValue } from "./serialization/value";
 export {
   type RunningRestServer,
   type ServeRestOptions,

@@ -4,9 +4,9 @@ A lightweight, PostgREST-inspired REST API for SQLite, built with Bun and
 Elysia.
 
 > [!CAUTION]
-> **Setupless/rest is an incomplete, pre-release prototype.** It does not yet
-> expose SQLite data through a REST API. The only HTTP endpoint currently
-> implemented is `GET /health`. Do not deploy it or rely on it for production
+> **Setupless/rest is an incomplete, pre-release prototype.** It now exposes
+> scalar SQLite reads, but mutations, embedded relations, and production
+> hardening are not complete. Do not deploy it or rely on it for production
 > workloads.
 
 ## Project status
@@ -14,14 +14,17 @@ Elysia.
 The current prototype can:
 
 - open a local SQLite database;
-- inspect its tables, views, columns, and primary keys at startup; and
+- inspect complete table, view, column, constraint, and relationship metadata
+  at startup;
+- serve authorized scalar `GET`, `HEAD`, and `OPTIONS` resource routes with
+  filtering, projection, ordering, pagination, counts, and singular responses;
 - serve a health check at `GET /health`.
 
 It does not yet provide:
 
-- REST endpoints for reading or modifying database resources;
-- filtering, pagination, relationships, or schema-driven validation;
-- authentication, authorization, or production security controls; or
+- resource mutations or embedded relationship execution;
+- generated OpenAPI, CORS, structured logging, or the complete production
+  operations surface; or
 - a stable API, configuration format, or compatibility guarantees.
 
 There are no releases yet, and breaking changes should be expected.
