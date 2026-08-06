@@ -103,6 +103,18 @@ describe("createAuthorizationResolver", () => {
     },
   );
 
+  it("deeply freezes the composed client and policy using filter", async () => {
+    const resolver = createAuthorizationResolver({
+      authorize: () => ({ allowed: true, using: USING_FILTER }),
+    });
+    const result = await resolver.resolve(options(request()));
+    const composed = result.using as Extract<RestFilter, { and: unknown }>;
+
+    expect(Object.isFrozen(composed)).toBe(true);
+    expect(Object.isFrozen(composed.and)).toBe(true);
+    expect(composed.and.every((filter) => Object.isFrozen(filter))).toBe(true);
+  });
+
   it("supports asynchronous plugins and caches by request/resource/operation", async () => {
     const calls: string[] = [];
     const plugin: RestAuthPlugin = {

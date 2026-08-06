@@ -276,4 +276,30 @@ describe("server lifecycle", () => {
       rmSync(testDatabase.directoryPath, { force: true, recursive: true });
     }
   });
+
+  it("starts with only a configured stock API key", async () => {
+    const testDatabase = createTestDatabase();
+    const { databasePath, directoryPath } = testDatabase;
+    testDatabase.database.close();
+    let server: Awaited<ReturnType<typeof serveRest>> | undefined;
+
+    try {
+      server = await serveRest({
+        config: {
+          ...loadConfig({
+            DATABASE_PATH: databasePath,
+            SETUPLESS_REST_API_KEY: "test-key",
+          }),
+          port: 0,
+        },
+      });
+
+      expect(server.port).toBeGreaterThan(0);
+      const response = await fetch(`http://localhost:${server.port}/health`);
+      expect(response.status).toBe(200);
+    } finally {
+      await server?.stop();
+      rmSync(directoryPath, { force: true, recursive: true });
+    }
+  });
 });
