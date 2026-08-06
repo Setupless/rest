@@ -78,6 +78,13 @@ export {
 } from "./query/filter";
 export { compileRestFilter } from "./query/filter-compiler";
 export { parseRestFilters } from "./query/filter-parser";
+export type { OrderTerm } from "./query/order-parser";
+export type { PaginationSource } from "./query/pagination";
+export {
+  parseRestQuery,
+  type RestQuery,
+  type SelectionNode,
+} from "./query/query";
 export {
   type RunningRestServer,
   type ServeRestOptions,
