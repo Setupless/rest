@@ -1,5 +1,17 @@
 /** Side-effect-free public APIs for embedding or starting Setupless/rest. */
 export { type AppDependencies, createRestApp } from "./app";
+export { createApiKeyAuth } from "./auth/api-key";
+export { createAuthorizationResolver } from "./auth/authorize";
+export type {
+  AuthorizationDecision,
+  ResolveAuthorizationOptions,
+  ResolvedAuthorization,
+  RestAuthorizationContext,
+  RestAuthorizationMode,
+  RestAuthorizationResolver,
+  RestAuthPlugin,
+  RestOperation,
+} from "./auth/types";
 export {
   loadConfig,
   type RestConfig,
