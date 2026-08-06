@@ -76,7 +76,7 @@ export function createTestDatabase(): TestDatabase {
 
   try {
     database = openDatabase({ path: databasePath, busyTimeoutMs: 5000 });
-    database.exec(TEST_DATABASE_SCHEMA);
+    database.run(TEST_DATABASE_SCHEMA);
 
     return { database, databasePath, directoryPath };
   } catch (error) {

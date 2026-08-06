@@ -17,7 +17,7 @@ function withRelationshipGraph(
   const database = openDatabase({ path: ":memory:", busyTimeoutMs: 0 });
 
   try {
-    database.exec(sql);
+    database.run(sql);
     assertion(buildRelationshipGraph(loadDatabaseSchema(database)));
   } finally {
     database.close();
