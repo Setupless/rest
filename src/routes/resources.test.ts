@@ -201,20 +201,24 @@ describe("scalar resource routes", () => {
   });
 
   it("returns controlled failures for invalid stored BOOLEAN and JSON", async () => {
-    database.run(
-      "INSERT INTO records VALUES (4, 1, NULL, 1, 2, '{bad', NULL, 'invalid')",
-    );
-    const invalidBoolean = await app().handle(
-      request("/records?id=eq.4&select=enabled"),
-    );
-    const invalidJson = await app().handle(
-      request("/records?id=eq.4&select=payload"),
-    );
+    try {
+      database.run(
+        "INSERT INTO records VALUES (4, 1, NULL, 1, 2, '{bad', NULL, 'invalid')",
+      );
+      const invalidBoolean = await app().handle(
+        request("/records?id=eq.4&select=enabled"),
+      );
+      const invalidJson = await app().handle(
+        request("/records?id=eq.4&select=payload"),
+      );
 
-    expect(invalidBoolean.status).toBe(500);
-    expect(await errorCode(invalidBoolean)).toBe("SLREST501");
-    expect(invalidJson.status).toBe(500);
-    expect(await errorCode(invalidJson)).toBe("SLREST501");
+      expect(invalidBoolean.status).toBe(500);
+      expect(await errorCode(invalidBoolean)).toBe("SLREST501");
+      expect(invalidJson.status).toBe(500);
+      expect(await errorCode(invalidJson)).toBe("SLREST501");
+    } finally {
+      database.run("DELETE FROM records WHERE id = 4");
+    }
   });
 
   it("quotes hostile schema identifiers while rejecting route and query injection", async () => {
@@ -235,7 +239,7 @@ describe("scalar resource routes", () => {
       database
         .query<{ total: number }, []>("SELECT COUNT(*) AS total FROM records")
         .get()?.total,
-    ).toBe(4);
+    ).toBe(3);
   });
 
   it("rejects embedded reads, unknown/internal resources, extra paths, and unsupported methods", async () => {
@@ -256,8 +260,6 @@ describe("scalar resource routes", () => {
     expect(await errorCode(extra)).toBe("SLREST200");
     expect(await errorCode(trailing)).toBe("SLREST200");
     expect(mutation.status).toBe(405);
-    expect(mutation.headers.get("Allow")).toBe(
-      "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT",
-    );
+    expect(mutation.headers.get("Allow")).toBe("GET, HEAD, OPTIONS");
   });
 });

@@ -1,7 +1,6 @@
 import type { DatabaseColumn } from "../database/schema";
 import { RestError } from "../http/errors";
 
-const INTEGER_PATTERN = /^-?(?:0|[1-9][0-9]*)$/;
 const JSON_NUMBER_PATTERN =
   /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/;
 
@@ -94,22 +93,14 @@ function assertSafeJsonNumbers(
   }
 }
 
-function serializeInteger(
-  value: bigint,
-  column: DatabaseColumn,
-  resourceName?: string,
-): number | string {
+function serializeInteger(value: bigint): number | string {
   if (
     value >= BigInt(Number.MIN_SAFE_INTEGER) &&
     value <= BigInt(Number.MAX_SAFE_INTEGER)
   ) {
     return Number(value);
   }
-  const serialized = value.toString();
-  if (!INTEGER_PATTERN.test(serialized)) {
-    throw storedValueError(column, resourceName, "SQLite INTEGER");
-  }
-  return serialized;
+  return value.toString();
 }
 
 /** Converts one exact SQLite value to its deterministic JSON representation. */
@@ -148,7 +139,7 @@ export function serializeSQLiteValue(
   }
 
   if (typeof value === "bigint") {
-    return serializeInteger(value, column, resourceName);
+    return serializeInteger(value);
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {

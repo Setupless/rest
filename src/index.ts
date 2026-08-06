@@ -13,6 +13,8 @@ export type {
   RestOperation,
 } from "./auth/types";
 export {
+  DEFAULT_MAX_EMBED_DEPTH,
+  DEFAULT_MAX_ROWS,
   loadConfig,
   type RestConfig,
   type RestLogLevel,
