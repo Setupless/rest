@@ -108,6 +108,8 @@ export async function serveRest(
       schema,
       auth,
       maxFilterDepth: config.maxEmbedDepth,
+      maxRows: config.maxRows,
+      maxEmbedDepth: config.maxEmbedDepth,
     });
   } catch (error) {
     return cleanupAfterStartFailure(error, () => database.close());
