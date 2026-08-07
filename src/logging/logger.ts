@@ -35,7 +35,10 @@ export function createJsonLogger(
     event: Readonly<Record<string, unknown>>,
   ): void => {
     if (LEVEL_PRIORITY[level] < LEVEL_PRIORITY[minimumLevel]) return;
-    sink(JSON.stringify({ level, ...event }), level);
+    sink(
+      JSON.stringify({ time: new Date().toISOString(), ...event, level }),
+      level,
+    );
   };
 
   const logger: RestLogger = {
@@ -54,3 +57,16 @@ export const NOOP_LOGGER: RestLogger = Object.freeze({
   warn: () => {},
   error: () => {},
 });
+
+/** Invokes a logger without allowing its backend to affect service behavior. */
+export function safeLog(
+  logger: RestLogger,
+  level: RestLogLevel,
+  event: Readonly<Record<string, unknown>>,
+): void {
+  try {
+    logger[level](event);
+  } catch {
+    // Logging is observational and must not change application behavior.
+  }
+}

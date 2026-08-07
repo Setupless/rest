@@ -106,9 +106,28 @@ export function applyCorsHeaders(
     }
   }
 
-  headers.set("Access-Control-Allow-Origin", cors.origin);
+  addOriginHeaders(headers, cors.origin);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function addOriginHeaders(headers: Headers, origin: string): void {
+  headers.set("Access-Control-Allow-Origin", origin);
   headers.set("Access-Control-Expose-Headers", EXPOSED_HEADERS);
   appendVaryOrigin(headers);
+}
+
+/** Adds only origin visibility to an error without revalidating preflight. */
+export function applyCorsErrorHeaders(
+  response: Response,
+  cors: CorsRequest | undefined,
+): Response {
+  if (cors === undefined) return response;
+  const headers = new Headers(response.headers);
+  addOriginHeaders(headers, cors.origin);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

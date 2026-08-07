@@ -1,7 +1,12 @@
-import { SQLiteError } from "bun:sqlite";
-import type { RestLogger } from "../logging/logger";
+import { mapDatabaseAvailabilityError } from "../database/errors";
+import { type RestLogger, safeLog } from "../logging/logger";
 import { limitRequestBody } from "./body-limit";
-import { applyCorsHeaders, type CorsRequest, resolveCorsRequest } from "./cors";
+import {
+  applyCorsErrorHeaders,
+  applyCorsHeaders,
+  type CorsRequest,
+  resolveCorsRequest,
+} from "./cors";
 import { RestError, type RestErrorCode, toErrorResponse } from "./errors";
 import { resolveRequestId } from "./request-id";
 
@@ -31,19 +36,8 @@ function normalizeRoute(request: Request): string {
 
 function operationalError(error: unknown): RestError {
   if (error instanceof RestError) return error;
-  if (error instanceof SQLiteError) {
-    if (
-      error.code?.startsWith("SQLITE_BUSY") ||
-      error.code?.startsWith("SQLITE_LOCKED")
-    ) {
-      return new RestError("SLREST502", {
-        hint: "Retry the request after the indicated delay.",
-      });
-    }
-    return new RestError("SLREST503", {
-      hint: "Check the database and contact the operator with the request ID.",
-    });
-  }
+  const databaseError = mapDatabaseAvailabilityError(error);
+  if (databaseError !== undefined) return databaseError;
   return new RestError("SLREST500");
 }
 
@@ -55,17 +49,6 @@ function attachRequestId(response: Response, requestId: string): Response {
     statusText: response.statusText,
     headers,
   });
-}
-
-function safeLog(
-  logger: RestLogger,
-  event: Readonly<Record<string, unknown>>,
-): void {
-  try {
-    logger.info(event);
-  } catch {
-    // A logging backend must not change the HTTP contract.
-  }
 }
 
 /** Applies the complete operational contract around one application route. */
@@ -95,18 +78,13 @@ export function createOperationalRequestHandler(
       errorCode = mapped.code;
       response = toErrorResponse(mapped, requestId);
       if (mapped.code !== "SLREST305") {
-        try {
-          response = applyCorsHeaders(response, cors);
-        } catch (corsError) {
-          const mappedCorsError = operationalError(corsError);
-          errorCode = mappedCorsError.code;
-          response = toErrorResponse(mappedCorsError, requestId);
-        }
+        response = applyCorsErrorHeaders(response, cors);
       }
     }
 
     safeLog(
       dependencies.logger,
+      "info",
       Object.freeze({
         event: "request.completed",
         requestId,

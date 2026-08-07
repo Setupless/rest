@@ -8,12 +8,24 @@ describe("createJsonLogger", () => {
 
     logger.debug({ event: "hidden" });
     logger.info({ event: "request.completed", status: 200 });
-    logger.error({ event: "server.failed" });
+    logger.error({ event: "server.failed", level: "debug" });
 
     expect(lines).toHaveLength(2);
-    expect(lines.map((line) => JSON.parse(line))).toEqual([
-      { level: "info", event: "request.completed", status: 200 },
-      { level: "error", event: "server.failed" },
-    ]);
+    const records = lines.map((line) => JSON.parse(line)) as Array<
+      Record<string, unknown>
+    >;
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({
+      level: "info",
+      event: "request.completed",
+      status: 200,
+    });
+    expect(records[1]).toMatchObject({
+      level: "error",
+      event: "server.failed",
+    });
+    expect(records.every((record) => typeof record.time === "string")).toBe(
+      true,
+    );
   });
 });

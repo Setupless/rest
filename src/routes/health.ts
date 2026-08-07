@@ -1,11 +1,15 @@
-import { SQLiteError } from "bun:sqlite";
 import type { Database } from "../database/database";
+import { mapDatabaseAvailabilityError } from "../database/errors";
 import { RestError } from "../http/errors";
 import { getPreferenceApplied, parsePreferences } from "../http/preferences";
 
 export interface HealthResponse {
   readonly status: "ok";
   readonly database: "ready";
+}
+
+export interface LivenessResponse {
+  readonly status: "ok";
 }
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
@@ -24,15 +28,8 @@ function validateHealthPreferences(request: Request): void {
 }
 
 function databaseUnavailable(error: unknown): never {
-  if (
-    error instanceof SQLiteError &&
-    (error.code?.startsWith("SQLITE_BUSY") ||
-      error.code?.startsWith("SQLITE_LOCKED"))
-  ) {
-    throw new RestError("SLREST502", {
-      hint: "Retry the request after the indicated delay.",
-    });
-  }
+  const databaseError = mapDatabaseAvailabilityError(error);
+  if (databaseError !== undefined) throw databaseError;
   throw new RestError("SLREST503", {
     hint: "Check the database and contact the operator with the request ID.",
   });
@@ -40,11 +37,16 @@ function databaseUnavailable(error: unknown): never {
 
 function jsonResponse(
   request: Request,
-  value: Readonly<Record<string, string>>,
+  value: HealthResponse | LivenessResponse,
 ): Response {
   return new Response(
     request.method === "HEAD" ? null : JSON.stringify(value),
-    { headers: { "Content-Type": JSON_CONTENT_TYPE } },
+    {
+      headers: {
+        "Cache-Control": "no-store",
+        "Content-Type": JSON_CONTENT_TYPE,
+      },
+    },
   );
 }
 
@@ -64,14 +66,16 @@ export function readinessResponse(
   } catch (error) {
     return databaseUnavailable(error);
   }
-  return jsonResponse(request, { status: "ok", database: "ready" });
+  const health: HealthResponse = { status: "ok", database: "ready" };
+  return jsonResponse(request, health);
 }
 
 /** Process-only liveness probe that deliberately does not access SQLite. */
 export function livenessResponse(request: Request): Response {
   assertHealthMethod(request);
   validateHealthPreferences(request);
-  return jsonResponse(request, { status: "ok" });
+  const health: LivenessResponse = { status: "ok" };
+  return jsonResponse(request, health);
 }
 
 /** Unauthenticated OPTIONS response shared by both health endpoints. */

@@ -89,7 +89,11 @@ export {
   type RestPreferenceName,
   type RestPreferences,
 } from "./http/preferences";
-export type { RestLogger } from "./logging/logger";
+export {
+  createJsonLogger,
+  NOOP_LOGGER,
+  type RestLogger,
+} from "./logging/logger";
 export {
   generateOpenApi,
   type OpenApiOptions,
@@ -121,7 +125,7 @@ export {
   type RestQueryConfig,
   type SelectionNode,
 } from "./query/query";
-export type { HealthResponse } from "./routes/health";
+export type { HealthResponse, LivenessResponse } from "./routes/health";
 export { createOpenApiRequestHandler } from "./routes/openapi";
 export { serializeSQLiteValue } from "./serialization/value";
 export {
