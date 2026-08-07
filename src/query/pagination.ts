@@ -6,6 +6,8 @@ export interface ParsedPagination {
   readonly offset: number;
   readonly limit: number;
   readonly source: PaginationSource;
+  /** Whether the client explicitly supplied query pagination or an item range. */
+  readonly explicit: boolean;
 }
 
 const DECIMAL_PATTERN = /^\d+$/;
@@ -89,6 +91,7 @@ export function parsePagination(
       offset: offset.value,
       limit: Math.min(limit.value, maxRows),
       source: "query" as const,
+      explicit: limit.present || offset.present,
     });
   }
 
@@ -124,5 +127,6 @@ export function parsePagination(
     offset: start,
     limit: requestedLimit,
     source: "range" as const,
+    explicit: true,
   });
 }

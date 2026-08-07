@@ -46,6 +46,7 @@ export {
   loadDatabaseSchema,
   type SQLiteAffinity,
 } from "./database/schema";
+export { executeDelete } from "./execution/delete";
 export {
   executeInsert,
   type MutationResult,
@@ -54,6 +55,7 @@ export {
   executeRead,
   type ReadExecutionResult,
 } from "./execution/read";
+export { executeUpdate } from "./execution/update";
 export {
   createRestError,
   REST_ERROR_DEFINITIONS,
@@ -106,4 +108,6 @@ export {
   type InsertPayload,
   type InsertRow,
   parseInsertPayload,
+  parseUpdatePatch,
+  type UpdatePatch,
 } from "./validation/write-payload";

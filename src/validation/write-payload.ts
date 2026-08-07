@@ -5,6 +5,7 @@ import { RestError } from "../http/errors";
 
 export type InsertRow = Readonly<Record<string, SQLQueryBindings>>;
 export type InsertPayload = InsertRow | readonly InsertRow[];
+export type UpdatePatch = Readonly<Record<string, SQLQueryBindings>>;
 
 type JsonNode =
   | { readonly kind: "null" }
@@ -509,4 +510,38 @@ export function parseInsertPayload(
   );
   assertConsistentBulkColumns(rows);
   return rows;
+}
+
+/** Parses and losslessly converts one non-empty HTTP PATCH object. */
+export function parseUpdatePatch(
+  source: string,
+  resource: DatabaseResource,
+): UpdatePatch {
+  let root: JsonNode;
+  try {
+    root = new JsonPayloadParser(source).parse();
+  } catch (error) {
+    if (error instanceof RestError) throw error;
+    throw invalidJson("The request body contains malformed JSON.");
+  }
+
+  if (root.kind !== "object") {
+    throw invalidJson("The PATCH payload must be exactly one JSON object.");
+  }
+  if (root.entries.size === 0) {
+    throw invalidJson("The PATCH payload must not be empty.");
+  }
+
+  const patch: Record<string, SQLQueryBindings> = Object.create(null);
+  for (const [name, value] of root.entries) {
+    const column = resolveColumn(resource, name);
+    if (Object.hasOwn(patch, column.name)) {
+      throw invalidJson(
+        `Payload column ${JSON.stringify(column.name)} is specified more than once.`,
+        "Use each schema-resolved column at most once per object.",
+      );
+    }
+    patch[column.name] = convertValue(value, column);
+  }
+  return Object.freeze(patch);
 }
