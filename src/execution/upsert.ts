@@ -19,15 +19,21 @@ import {
   getIdentityProjectionSql,
   getReturnedIdentity,
   getReturningIdentitySql,
+  insertMutationRow,
   type MutationIdentity,
   type MutationPostImage,
   mapMutationDatabaseError,
   readMutationPostImage,
+  rowsFromInsertPayload,
 } from "./mutation";
 import { quoteIdentifier } from "./sql";
 
+const conflictTargetBrand: unique symbol = Symbol("ConflictTarget");
+
+/** Opaque conflict metadata; obtain instances through resolveConflictTarget. */
 export interface ConflictTarget {
   readonly columns: readonly string[];
+  readonly [conflictTargetBrand]: true;
 }
 
 export type AuthorizationPhase =
@@ -55,7 +61,10 @@ function createConflictTarget(
   columns: readonly string[],
   collations: readonly string[],
 ): ConflictTarget {
-  const target = Object.freeze({ columns });
+  const target = Object.freeze({
+    columns,
+    [conflictTargetBrand]: true as const,
+  });
   conflictTargetCollations.set(target, collations);
   return target;
 }
@@ -143,28 +152,11 @@ export function resolveConflictTarget(
   );
 }
 
-function rowsFromPayload(payload: InsertPayload): readonly InsertRow[] {
-  return Array.isArray(payload)
-    ? payload
-    : Object.freeze([payload as InsertRow]);
-}
-
 function requireAuthorization(
   phase: AuthorizationPhase,
 ): ResolvedAuthorization {
   if (!phase.resolved) throw phase.error;
   return phase.authorization;
-}
-
-function compileInsertSql(
-  resource: DatabaseResource,
-  columns: readonly string[],
-): string {
-  const values =
-    columns.length === 0
-      ? " DEFAULT VALUES"
-      : ` (${columns.map(quoteIdentifier).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`;
-  return `INSERT INTO ${quoteIdentifier(resource.name)}${values} RETURNING ${getReturningIdentitySql(resource)}`;
 }
 
 function targetPredicate(
@@ -200,14 +192,71 @@ function targetPredicate(
       parameters.push(value);
       continue;
     }
-    if (column.defaultValue === null) return undefined;
-    predicates.push(`${targetExpression} = (${column.defaultValue})`);
+    return undefined;
   }
 
   return Object.freeze({
     sql: predicates.join(" AND "),
     parameters: Object.freeze(parameters),
   });
+}
+
+function isSqlBinding(value: unknown): value is SQLQueryBindings {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "bigint" ||
+    typeof value === "boolean" ||
+    value instanceof Uint8Array
+  );
+}
+
+function materializeConflictDefaults(
+  database: Database,
+  resource: DatabaseResource,
+  row: InsertRow,
+  target: ConflictTarget,
+): InsertRow {
+  const columns = new Map(
+    resource.columns.map((column) => [column.name, column]),
+  );
+  const omittedDefaults = target.columns.flatMap((name, index) => {
+    if (Object.hasOwn(row, name)) return [];
+    const column = columns.get(name);
+    if (column === undefined)
+      throw new TypeError("Conflict metadata is invalid");
+    return column.defaultValue === null
+      ? []
+      : [{ name, expression: column.defaultValue, index }];
+  });
+  if (omittedDefaults.length === 0) return row;
+
+  const resolved = database
+    .query<Record<string, unknown>, []>(
+      `SELECT ${omittedDefaults
+        .map(
+          ({ expression, index }) =>
+            `(${expression}) AS ${quoteIdentifier(`__slrest_default_${index}`)}`,
+        )
+        .join(", ")}`,
+    )
+    .get();
+  if (resolved === null)
+    throw new TypeError("Conflict defaults did not resolve");
+
+  const materialized: Record<string, SQLQueryBindings> = Object.assign(
+    Object.create(null),
+    row,
+  );
+  for (const { name, index } of omittedDefaults) {
+    const value = resolved[`__slrest_default_${index}`];
+    if (!isSqlBinding(value)) {
+      throw new TypeError("Conflict default produced an unsupported value");
+    }
+    materialized[name] = value;
+  }
+  return Object.freeze(materialized);
 }
 
 function findConflict(
@@ -251,27 +300,6 @@ function findConflict(
     identity: getReturnedIdentity(resource, conflict),
     usingAllowed: conflict.__slrest_using_allowed === 1,
   });
-}
-
-function insertRow(
-  database: Database,
-  resource: DatabaseResource,
-  row: InsertRow,
-): MutationIdentity {
-  const columns = Object.keys(row);
-  const values = columns.map((column) => row[column] ?? null);
-  const returned = database
-    .query<Record<string, unknown>, SQLQueryBindings[]>(
-      compileInsertSql(resource, columns),
-    )
-    .get(...values);
-  if (returned === null) {
-    throw new RestError("SLREST406", {
-      details: `Resource ${JSON.stringify(resource.name)} did not return a stable inserted identity.`,
-      hint: "Use a table with an accessible rowid alias or complete primary key.",
-    });
-  }
-  return getReturnedIdentity(resource, returned);
 }
 
 function updateConflict(
@@ -325,15 +353,21 @@ export function executeUpsert(
   if (resolution === undefined) {
     throw new TypeError("executeUpsert requires a resolution preference");
   }
-  const rows = rowsFromPayload(payload);
+  const rows = rowsFromInsertPayload(payload);
   const upsert = database.transaction((): MutationResult => {
     const postImages: MutationPostImage[] = [];
 
     for (const row of rows) {
-      const conflict = findConflict(
+      const rowToInsert = materializeConflictDefaults(
         database,
         resource,
         row,
+        target,
+      );
+      const conflict = findConflict(
+        database,
+        resource,
+        rowToInsert,
         target,
         authorization.update,
       );
@@ -343,7 +377,7 @@ export function executeUpsert(
           readMutationPostImage(
             database,
             resource,
-            insertRow(database, resource, row),
+            insertMutationRow(database, resource, rowToInsert),
             query,
             insertAuthorization,
             "insert",
@@ -379,7 +413,7 @@ export function executeUpsert(
   });
 
   try {
-    return upsert();
+    return upsert.immediate();
   } catch (error) {
     return mapMutationDatabaseError(error, resource);
   }

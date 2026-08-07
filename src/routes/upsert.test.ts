@@ -55,6 +55,12 @@ const SCHEMA = `
     value TEXT NOT NULL
   );
   INSERT INTO defaulted (value) VALUES ('initial');
+  CREATE TABLE expression_defaulted (
+    id INTEGER PRIMARY KEY,
+    slug TEXT NOT NULL DEFAULT (lower('SHARED')) UNIQUE,
+    value TEXT NOT NULL
+  );
+  INSERT INTO expression_defaulted (value) VALUES ('initial');
   CREATE TABLE aliases (
     id INTEGER PRIMARY KEY,
     handle TEXT NOT NULL,
@@ -216,6 +222,32 @@ describe("POST conflict resolution and single-row PUT", () => {
     expect(items()[0]?.title).toBe("one");
   });
 
+  it("pins singular ignore and headers-only upsert responses", async () => {
+    const singularIgnore = await app().handle(
+      write(
+        "POST",
+        "/items",
+        '{"id":1,"tenant_id":1,"code":"a","title":"ignored"}',
+        "missing=default, resolution=ignore-duplicates, return=representation",
+        { Accept: "application/vnd.pgrst.object+json" },
+      ),
+    );
+    expect(singularIgnore.status).toBe(406);
+    expect(await errorCode(singularIgnore)).toBe("SLREST106");
+
+    const headersOnly = await app().handle(
+      write(
+        "POST",
+        "/items",
+        '{"id":1,"tenant_id":1,"code":"a","title":"headers"}',
+        "missing=default, resolution=merge-duplicates, return=headers-only",
+      ),
+    );
+    expect(headersOnly.status).toBe(201);
+    expect(headersOnly.headers.get("Location")).toBe("/items?id=eq.1");
+    expect(await headersOnly.text()).toBe("");
+  });
+
   it("applies missing defaults and preserves bulk input order atomically", async () => {
     const response = await app().handle(
       write(
@@ -241,6 +273,18 @@ describe("POST conflict resolution and single-row PUT", () => {
     );
     expect(await defaultTarget.json()).toEqual([
       { id: 1, slug: "shared", value: "merged default" },
+    ]);
+
+    const expressionTarget = await app().handle(
+      write(
+        "POST",
+        "/expression_defaulted?on_conflict=slug&select=id,slug,value",
+        '{"value":"merged expression"}',
+        "missing=default, resolution=merge-duplicates, return=representation",
+      ),
+    );
+    expect(await expressionTarget.json()).toEqual([
+      { id: 1, slug: "shared", value: "merged expression" },
     ]);
   });
 
