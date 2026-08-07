@@ -13,8 +13,11 @@ const STOP_TIMEOUT_MS = 5_000;
 export interface E2EServer {
   readonly origin: string;
   readonly databasePath: string;
+  /** Sends an authenticated request to the child process. */
   request(path: string, init?: RequestInit): Promise<Response>;
+  /** Stops the child process once and releases every owned fixture resource. */
   stop(signal?: "SIGINT" | "SIGTERM"): Promise<void>;
+  /** Returns the currently captured, credential-redacted process output. */
   diagnostics(): Readonly<{ stdout: string; stderr: string }>;
 }
 
@@ -35,6 +38,7 @@ interface CapturedOutput {
   text(): string;
 }
 
+/** Drains one process stream continuously so a verbose child cannot deadlock. */
 function capture(stream: ReadableStream<Uint8Array>): CapturedOutput {
   const chunks: string[] = [];
   const decoder = new TextDecoder();
@@ -54,6 +58,7 @@ function capture(stream: ReadableStream<Uint8Array>): CapturedOutput {
   return { done, text: () => chunks.join("") };
 }
 
+/** Asks the operating system for an unused loopback port. */
 async function chooseEphemeralPort(): Promise<number> {
   return await new Promise((resolvePort, reject) => {
     const server = createServer();
@@ -74,6 +79,7 @@ async function chooseEphemeralPort(): Promise<number> {
   });
 }
 
+/** Removes credentials and authorization values before exposing diagnostics. */
 function redact(value: string, secrets: readonly string[]): string {
   let redacted = value.replace(
     /authorization\s*[:=]\s*[^\s,"}]+/giu,
@@ -85,6 +91,7 @@ function redact(value: string, secrets: readonly string[]): string {
   return redacted;
 }
 
+/** Rejects an asynchronous lifecycle step after one fixed upper bound. */
 async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -103,6 +110,7 @@ async function withTimeout<T>(
   }
 }
 
+/** Polls process liveness without allowing one readiness request to hang. */
 async function waitForReadiness(
   origin: string,
   subprocess: Bun.Subprocess,
@@ -280,6 +288,7 @@ export function useE2EServer(options: E2EServerOptions = {}): E2EServer {
   };
 }
 
+/** Asserts one stable public error code while retaining useful failure output. */
 export async function expectErrorCode(
   response: Response,
   code: `SLREST${number}`,
