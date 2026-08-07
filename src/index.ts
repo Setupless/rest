@@ -57,6 +57,13 @@ export {
 } from "./execution/read";
 export { executeUpdate } from "./execution/update";
 export {
+  type AuthorizationPhase,
+  type ConflictTarget,
+  executeUpsert,
+  resolveConflictTarget,
+  type UpsertAuthorization,
+} from "./execution/upsert";
+export {
   createRestError,
   REST_ERROR_DEFINITIONS,
   RestError,
@@ -108,6 +115,7 @@ export {
   type InsertPayload,
   type InsertRow,
   parseInsertPayload,
+  parsePutPayload,
   parseUpdatePatch,
   type UpdatePatch,
 } from "./validation/write-payload";

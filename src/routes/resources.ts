@@ -1,12 +1,25 @@
-import type { RestAuthorizationResolver } from "../auth/types";
+import type { SQLQueryBindings } from "bun:sqlite";
+import type {
+  ResolvedAuthorization,
+  RestAuthorizationResolver,
+} from "../auth/types";
 import type { Database } from "../database/database";
 import { foldSQLiteIdentifier } from "../database/identifier";
 import type { DatabaseRelationshipGraph } from "../database/relationships";
-import type { DatabaseResource, DatabaseSchema } from "../database/schema";
+import type {
+  DatabaseColumn,
+  DatabaseResource,
+  DatabaseSchema,
+} from "../database/schema";
 import { executeDelete } from "../execution/delete";
 import { executeInsert, type MutationResult } from "../execution/insert";
 import { executeRead, type ReadExecutionResult } from "../execution/read";
 import { executeUpdate } from "../execution/update";
+import {
+  type AuthorizationPhase,
+  executeUpsert,
+  resolveConflictTarget,
+} from "../execution/upsert";
 import { RestError, toErrorResponse } from "../http/errors";
 import {
   getResponseContentType,
@@ -19,6 +32,7 @@ import {
   parsePreferences,
   type RestPreferences,
 } from "../http/preferences";
+import type { RestFilter, RestScalar } from "../query/filter";
 import {
   parseRestQuery,
   type RestQuery,
@@ -26,6 +40,7 @@ import {
 } from "../query/query";
 import {
   parseInsertPayload,
+  parsePutPayload,
   parseUpdatePatch,
 } from "../validation/write-payload";
 
@@ -39,7 +54,7 @@ export interface ResourceRouteDependencies {
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const READ_ONLY_METHODS = "GET, HEAD, OPTIONS";
-const WRITE_METHODS = "GET, HEAD, OPTIONS, POST, PATCH, DELETE";
+const WRITE_METHODS = "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT";
 
 function requestId(request: Request): string {
   const supplied = request.headers.get("X-Request-Id");
@@ -226,16 +241,22 @@ async function handleRead(
   });
 }
 
-function assertInsertControls(request: Request): void {
+function getOnConflict(request: Request): string | undefined {
   const url = new URL(request.url);
-  if (url.searchParams.has("on_conflict")) {
+  const values = url.searchParams.getAll("on_conflict");
+  if (values.length > 1) {
     throw new RestError("SLREST113", {
-      details: "Conflict targets are not available for plain inserts.",
-      hint: "Remove on_conflict until conflict resolution is enabled.",
+      details: "on_conflict must not be repeated.",
+      hint: "Provide one comma-separated conflict target.",
     });
   }
+  return values[0];
+}
+
+function assertInsertControls(request: Request, upsert: boolean): void {
+  const url = new URL(request.url);
   const unsupported = [...url.searchParams.keys()].find(
-    (name) => name !== "select",
+    (name) => name !== "select" && (!upsert || name !== "on_conflict"),
   );
   if (
     unsupported !== undefined ||
@@ -244,9 +265,28 @@ function assertInsertControls(request: Request): void {
   ) {
     throw new RestError("SLREST103", {
       details: "POST insert accepts only the select query control.",
-      hint: "Remove filters, ordering, and pagination from the insert request.",
+      hint: upsert
+        ? "Use only select and one on_conflict control for POST upsert."
+        : "Remove filters, ordering, and pagination from the insert request.",
     });
   }
+}
+
+function toAuthorizationPhase(
+  result: PromiseSettledResult<ResolvedAuthorization>,
+): AuthorizationPhase {
+  if (
+    result.status === "rejected" &&
+    !(
+      result.reason instanceof RestError &&
+      (result.reason.code === "SLREST302" || result.reason.code === "SLREST303")
+    )
+  ) {
+    throw result.reason;
+  }
+  return result.status === "fulfilled"
+    ? Object.freeze({ resolved: true, authorization: result.value })
+    : Object.freeze({ resolved: false, error: result.reason });
 }
 
 async function handleInsert(
@@ -262,15 +302,17 @@ async function handleInsert(
     });
   }
 
-  assertInsertControls(request);
   validateRequestMediaType(request.headers);
   const preferences = parsePreferences(request.headers);
-  if (preferences.resolution !== undefined) {
+  const onConflict = getOnConflict(request);
+  const isUpsert = preferences.resolution !== undefined;
+  if (!isUpsert && onConflict !== undefined) {
     throw new RestError("SLREST113", {
-      details: "Conflict resolution is not available for plain inserts.",
-      hint: "Remove the resolution preference until POST upsert is enabled.",
+      details: "on_conflict requires a conflict resolution preference.",
+      hint: "Add resolution=merge-duplicates or resolution=ignore-duplicates.",
     });
   }
+  assertInsertControls(request, isUpsert);
   const preferenceApplied = getPreferenceApplied(preferences, "POST");
   const mediaType = negotiateResponseMediaType(request.headers, "resource");
   const query = parseRestQuery(
@@ -281,11 +323,6 @@ async function handleInsert(
     dependencies.relationships,
   );
   rejectEmbeddedSelection(query);
-  const authorization = await dependencies.authorization.resolve({
-    request,
-    resource,
-    operation: "insert",
-  });
   const payload = parseInsertPayload(
     await request.text(),
     resource,
@@ -298,14 +335,46 @@ async function handleInsert(
       hint: "Send one object or request the default JSON array media type.",
     });
   }
-  const result = executeInsert(
-    dependencies.database,
-    resource,
-    payload,
-    query,
-    preferences,
-    authorization,
-  );
+  const result = isUpsert
+    ? await (async () => {
+        const target = resolveConflictTarget(resource, onConflict);
+        const [insert, update] = await Promise.allSettled([
+          dependencies.authorization.resolve({
+            request,
+            resource,
+            operation: "insert",
+          }),
+          dependencies.authorization.resolve({
+            request,
+            resource,
+            operation: "update",
+          }),
+        ]);
+        return executeUpsert(
+          dependencies.database,
+          resource,
+          payload,
+          query,
+          preferences,
+          Object.freeze({
+            insert: toAuthorizationPhase(insert),
+            update: toAuthorizationPhase(update),
+          }),
+          target,
+        );
+      })()
+    : executeInsert(
+        dependencies.database,
+        resource,
+        payload,
+        query,
+        preferences,
+        await dependencies.authorization.resolve({
+          request,
+          resource,
+          operation: "insert",
+        }),
+      );
   const response = createMutationResponse({
     result,
     query,
@@ -318,6 +387,202 @@ async function handleInsert(
   if (preferences.return === "headers-only" && result.location !== null) {
     response.headers.set("Location", result.location);
   }
+  return response;
+}
+
+function collectPutIdentity(
+  filter: RestFilter | undefined,
+  resource: DatabaseResource,
+): ReadonlyMap<string, RestScalar> {
+  const values = new Map<string, RestScalar>();
+  const visit = (node: RestFilter): void => {
+    if ("and" in node) {
+      for (const child of node.and) visit(child);
+      return;
+    }
+    if (!("field" in node) || node.operator !== "eq") {
+      throw new RestError("SLREST112", {
+        details: "PUT accepts only primary-key equality filters.",
+        hint: "Filter every primary-key column exactly once with eq.",
+      });
+    }
+    const column = getPutColumn(resource, node.field);
+    const value = node.value;
+    if (
+      column.primaryKeyPosition === null ||
+      Array.isArray(value) ||
+      values.has(column.name)
+    ) {
+      throw new RestError("SLREST112", {
+        details: `PUT identity must name each primary-key column exactly once: (${resource.primaryKey.join(", ")}).`,
+        hint: "Remove unrelated or duplicate filters.",
+      });
+    }
+    values.set(column.name, value as RestScalar);
+  };
+
+  if (filter !== undefined) visit(filter);
+  if (
+    resource.primaryKey.length === 0 ||
+    resource.primaryKey.some((column) => !values.has(column)) ||
+    values.size !== resource.primaryKey.length
+  ) {
+    throw new RestError("SLREST112", {
+      details:
+        resource.primaryKey.length === 0
+          ? `Resource ${JSON.stringify(resource.name)} has no primary key for PUT.`
+          : `PUT identity must cover the complete primary key (${resource.primaryKey.join(", ")}).`,
+      hint: "Filter every primary-key column exactly once with eq.",
+    });
+  }
+  return values;
+}
+
+function getPutColumn(
+  resource: DatabaseResource,
+  name: string,
+): DatabaseColumn {
+  const identifier = foldSQLiteIdentifier(name);
+  const column = resource.columns.find(
+    (candidate) => foldSQLiteIdentifier(candidate.name) === identifier,
+  );
+  if (column === undefined) {
+    throw new RestError("SLREST101", {
+      details: `Column ${JSON.stringify(name)} does not exist on resource ${JSON.stringify(resource.name)}.`,
+    });
+  }
+  return column;
+}
+
+function blobHex(value: Uint8Array): string {
+  return `\\x${[...value]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function putIdentityMatches(
+  column: DatabaseColumn,
+  bodyValue: SQLQueryBindings,
+  filterValue: RestScalar,
+): boolean {
+  if (bodyValue === null || filterValue === null) return false;
+  if (bodyValue instanceof Uint8Array) {
+    return (
+      typeof filterValue === "string" && blobHex(bodyValue) === filterValue
+    );
+  }
+  if (typeof filterValue === "boolean") {
+    return bodyValue === (filterValue ? 1 : 0);
+  }
+  if (column.affinity === "integer" || column.affinity === "numeric") {
+    return String(bodyValue) === String(filterValue);
+  }
+  return Object.is(bodyValue, filterValue);
+}
+
+function assertPutControls(request: Request, query: RestQuery): void {
+  const parameters = new URL(request.url).searchParams;
+  if (
+    parameters.has("on_conflict") ||
+    parameters.has("order") ||
+    parameters.has("limit") ||
+    parameters.has("offset") ||
+    request.headers.has("Range") ||
+    request.headers.has("Range-Unit") ||
+    query.paginationExplicit ||
+    query.order.length > 0
+  ) {
+    throw new RestError("SLREST112", {
+      details:
+        "PUT does not accept conflict, ordering, or pagination controls.",
+      hint: "Use only select and complete primary-key equality filters.",
+    });
+  }
+}
+
+async function handlePut(
+  request: Request,
+  resource: DatabaseResource,
+  dependencies: ResourceRouteDependencies,
+  id: string,
+): Promise<Response> {
+  if (!resource.writable) {
+    throw new RestError("SLREST204", {
+      details: `PUT is not available for ${resource.kind} resource ${JSON.stringify(resource.name)}.`,
+      headers: { Allow: READ_ONLY_METHODS },
+    });
+  }
+  validateRequestMediaType(request.headers);
+  const preferences = parsePreferences(request.headers);
+  const preferenceApplied = getPreferenceApplied(preferences, "PUT");
+  const mediaType = negotiateResponseMediaType(request.headers, "resource");
+  const query = parseRestQuery(
+    request,
+    resource,
+    dependencies.schema,
+    dependencies.queryConfig,
+    dependencies.relationships,
+  );
+  rejectEmbeddedSelection(query);
+  assertPutControls(request, query);
+  const identity = collectPutIdentity(query.filter, resource);
+  const payload = parsePutPayload(
+    await request.text(),
+    resource,
+    preferences.missing,
+  );
+  for (const columnName of resource.primaryKey) {
+    const column = getPutColumn(resource, columnName);
+    const bodyValue = payload[columnName];
+    const filterValue = identity.get(columnName);
+    if (
+      bodyValue === undefined ||
+      filterValue === undefined ||
+      !putIdentityMatches(column, bodyValue, filterValue)
+    ) {
+      throw new RestError("SLREST112", {
+        details: `PUT URL and body identities differ for primary-key column ${JSON.stringify(columnName)}.`,
+        hint: "Use the same primary-key value in the URL equality filter and body.",
+      });
+    }
+  }
+
+  const [insert, update] = await Promise.allSettled([
+    dependencies.authorization.resolve({
+      request,
+      resource,
+      operation: "insert",
+    }),
+    dependencies.authorization.resolve({
+      request,
+      resource,
+      operation: "update",
+      ...(query.filter === undefined ? {} : { clientFilter: query.filter }),
+    }),
+  ]);
+  const result = executeUpsert(
+    dependencies.database,
+    resource,
+    payload,
+    query,
+    Object.freeze({ ...preferences, resolution: "merge-duplicates" }),
+    Object.freeze({
+      insert: toAuthorizationPhase(insert),
+      update: toAuthorizationPhase(update),
+    }),
+    resolveConflictTarget(resource),
+  );
+  const response = createMutationResponse({
+    result,
+    query,
+    preferences,
+    mediaType,
+    preferenceApplied,
+    requestId: id,
+    status: 201,
+  });
+  if (result.location !== null)
+    response.headers.set("Location", result.location);
   return response;
 }
 
@@ -420,6 +685,9 @@ export function createResourceRequestHandler(
       }
       if (request.method === "POST") {
         return await handleInsert(request, resource, dependencies, id);
+      }
+      if (request.method === "PUT") {
+        return await handlePut(request, resource, dependencies, id);
       }
       if (request.method === "PATCH" || request.method === "DELETE") {
         return await handleFilteredMutation(
