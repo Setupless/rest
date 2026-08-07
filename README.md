@@ -78,7 +78,7 @@ surrounding whitespace.
 | `HOST` | `127.0.0.1`; a hostname or IP address. |
 | `PORT` | `3000`; 1–65535. |
 | `SETUPLESS_REST_API_KEY` | No default; blank is absent and the stock CLI requires a value before listening. Programmatic configuration may omit it. |
-| `MAX_ROWS` | `1000`; 1–1,000,000. |
+| `MAX_ROWS` | `1000`; 1–1,000,000. Caps root and per-relation pages and the request-wide number of materialized related rows. |
 | `MAX_EMBED_DEPTH` | `5`; 0–20. |
 | `MAX_BODY_BYTES` | `1048576`; 1–1,073,741,824. |
 | `SQLITE_BUSY_TIMEOUT_MS` | `5000`; 0–600,000. |

@@ -8,7 +8,6 @@ import type { Database } from "../database/database";
 import type {
   DatabaseRelationship,
   DatabaseRelationshipGraph,
-  ManyToManyRelationship,
 } from "../database/relationships";
 import type {
   DatabaseColumn,
@@ -59,6 +58,10 @@ interface Projection {
   readonly column: DatabaseColumn;
   readonly valueAlias: string;
   readonly typeAlias: string;
+}
+
+interface MaterializationBudget {
+  remaining: number;
 }
 
 type SqlRow = Record<string, unknown>;
@@ -264,9 +267,13 @@ function orderSql(
     );
   }
 
-  for (const column of resource.columns) {
-    if (ordered.has(column.name)) continue;
-    terms.push(`${quotedAlias}.${quoteIdentifier(column.name)} ASC`);
+  const tieBreakers =
+    resource.primaryKey.length === 0
+      ? resource.columns.map((column) => column.name)
+      : resource.primaryKey;
+  for (const column of tieBreakers) {
+    if (ordered.has(column)) continue;
+    terms.push(`${quotedAlias}.${quoteIdentifier(column)} ASC`);
   }
 
   return terms.join(", ");
@@ -320,14 +327,6 @@ function parentKey(
   });
 }
 
-function relationTargetMappings(
-  relationship: DatabaseRelationship,
-): readonly { readonly source: string; readonly target: string }[] {
-  return relationship.kind === "many-to-many"
-    ? relationship.junction.sourceColumnMappings
-    : relationship.columnMappings;
-}
-
 function parentCte(
   keys: readonly {
     readonly signature: string;
@@ -352,22 +351,22 @@ function parentCte(
   });
 }
 
-function relationJoinSql(
+function relationFromSql(
   relationship: DatabaseRelationship,
   targetAlias: string,
   junctionAlias: string,
 ): string {
   const parentAlias = quoteIdentifier("__slrest_parents");
   const target = quoteIdentifier(targetAlias);
-  const mappings = relationTargetMappings(relationship);
 
   if (relationship.kind !== "many-to-many") {
-    return mappings
+    const predicate = relationship.columnMappings
       .map(
         (mapping, index) =>
           `${target}.${quoteIdentifier(mapping.target)} = ${parentAlias}.${quoteIdentifier(`__parent_key_${index}`)}`,
       )
       .join(" AND ");
+    return `${parentAlias} JOIN ${quoteIdentifier(relationship.target)} AS ${target} ON ${predicate}`;
   }
 
   const junction = quoteIdentifier(junctionAlias);
@@ -383,7 +382,7 @@ function relationJoinSql(
         `${target}.${quoteIdentifier(mapping.target)} = ${junction}.${quoteIdentifier(mapping.source)}`,
     )
     .join(" AND ");
-  return `${sourceJoin} JOIN ${quoteIdentifier(relationship.target)} AS ${target} ON ${targetJoin}`;
+  return `${parentAlias} JOIN ${quoteIdentifier(relationship.junction.resource)} AS ${junction} ON ${sourceJoin} JOIN ${quoteIdentifier(relationship.target)} AS ${target} ON ${targetJoin}`;
 }
 
 function freezeRows(rows: readonly MaterializedRow[]): void {
@@ -394,6 +393,7 @@ function fetchRelatedRows(
   context: RelationExecutionContext,
   parentRows: readonly MaterializedRow[],
   plan: RelationExecutionPlan,
+  budget: MaterializationBudget,
 ): ReadonlyMap<string, readonly MaterializedRow[]> {
   const keysBySignature = new Map<
     string,
@@ -436,7 +436,7 @@ function fetchRelatedRows(
   const fixedParameterCount =
     targetAuthorization.parameters.length +
     junctionAuthorization.parameters.length +
-    2;
+    3;
   const keyWidth = keys[0]?.bindings.length ?? 1;
   const batchSize = Math.min(
     MAX_PARENT_KEYS_PER_BATCH,
@@ -460,26 +460,16 @@ function fetchRelatedRows(
     const batch = keys.slice(start, start + batchSize);
     const cte = parentCte(batch);
     const parent = quoteIdentifier("__slrest_parents");
-    const target = quoteIdentifier(targetAlias);
-    const targetFrom =
-      plan.relationship.kind === "many-to-many"
-        ? `${parent} JOIN ${quoteIdentifier(
-            (plan.relationship as ManyToManyRelationship).junction.resource,
-          )} AS ${quoteIdentifier(junctionAlias)} ON ${relationJoinSql(
-            plan.relationship,
-            targetAlias,
-            junctionAlias,
-          )}`
-        : `${parent} JOIN ${quoteIdentifier(plan.target.name)} AS ${target} ON ${relationJoinSql(
-            plan.relationship,
-            targetAlias,
-            junctionAlias,
-          )}`;
+    const targetFrom = relationFromSql(
+      plan.relationship,
+      targetAlias,
+      junctionAlias,
+    );
     const filters = [targetAuthorization.sql, junctionAuthorization.sql].filter(
       (sql): sql is string => sql !== undefined,
     );
     const where = filters.length === 0 ? "" : ` WHERE ${filters.join(" AND ")}`;
-    const sql = `WITH ${cte.sql}, ${quoteIdentifier("__slrest_ranked")} AS (SELECT ${parent}.${quoteIdentifier("__parent_id")} AS ${quoteIdentifier("__parent_id")}, ${projectionSql(projections, targetAlias)}, ROW_NUMBER() OVER (PARTITION BY ${parent}.${quoteIdentifier("__parent_id")} ORDER BY ${orderSql(plan.target, plan.selection.query, targetAlias)}) AS ${quoteIdentifier("__rank")} FROM ${targetFrom}${where}) SELECT * FROM ${quoteIdentifier("__slrest_ranked")} WHERE ${quoteIdentifier("__rank")} > ? AND ${quoteIdentifier("__rank")} <= ? ORDER BY ${quoteIdentifier("__parent_id")}, ${quoteIdentifier("__rank")}`;
+    const sql = `WITH ${cte.sql}, ${quoteIdentifier("__slrest_ranked")} AS (SELECT ${parent}.${quoteIdentifier("__parent_id")} AS ${quoteIdentifier("__parent_id")}, ${projectionSql(projections, targetAlias)}, ROW_NUMBER() OVER (PARTITION BY ${parent}.${quoteIdentifier("__parent_id")} ORDER BY ${orderSql(plan.target, plan.selection.query, targetAlias)}) AS ${quoteIdentifier("__rank")} FROM ${targetFrom}${where}) SELECT * FROM ${quoteIdentifier("__slrest_ranked")} WHERE ${quoteIdentifier("__rank")} > ? AND ${quoteIdentifier("__rank")} <= ? ORDER BY ${quoteIdentifier("__parent_id")}, ${quoteIdentifier("__rank")} LIMIT ?`;
     const rawRows = context.database
       .query<SqlRow, SQLQueryBindings[]>(sql)
       .all(
@@ -488,7 +478,15 @@ function fetchRelatedRows(
         ...junctionAuthorization.parameters,
         plan.selection.query.offset,
         requestedEnd,
+        budget.remaining + 1,
       );
+    if (rawRows.length > budget.remaining) {
+      throw new RestError("SLREST103", {
+        details: `Embedded results exceed the configured request budget of ${context.config.maxRows} related rows.`,
+        hint: "Narrow embedded filters or reduce relation page limits.",
+      });
+    }
+    budget.remaining -= rawRows.length;
 
     for (const rawRow of rawRows) {
       const parentId = rawRow.__parent_id;
@@ -516,11 +514,12 @@ function attachRelations(
   context: RelationExecutionContext,
   parentRows: readonly MaterializedRow[],
   plans: readonly RelationExecutionPlan[],
+  budget: MaterializationBudget,
 ): void {
   for (const plan of plans) {
-    const groups = fetchRelatedRows(context, parentRows, plan);
+    const groups = fetchRelatedRows(context, parentRows, plan, budget);
     const childRows = [...groups.values()].flat();
-    attachRelations(context, childRows, plan.children);
+    attachRelations(context, childRows, plan.children, budget);
     freezeRows(childRows);
 
     for (const row of parentRows) {
@@ -598,7 +597,9 @@ function executeRootRead(
   const materialized = rawRows.map((row) =>
     materializeRow(row, resource, query, projections),
   );
-  attachRelations(context, materialized, plans);
+  attachRelations(context, materialized, plans, {
+    remaining: context.config.maxRows,
+  });
   freezeRows(materialized);
   const rows = Object.freeze(materialized.map((row) => row.output));
 

@@ -281,6 +281,14 @@ describe("relation resource reads", () => {
 
       expect(response.status).toBe(200);
       expect(rows).toHaveLength(1_005);
+      expect(
+        rows.every(
+          (row, index) =>
+            row.id === 10_000 + index &&
+            row.tasks.length === 1 &&
+            row.tasks[0]?.id === 20_000 + index,
+        ),
+      ).toBe(true);
       expect(rows[0]).toEqual({ id: 10_000, tasks: [{ id: 20_000 }] });
       expect(rows.at(-1)).toEqual({
         id: 11_004,
@@ -290,5 +298,16 @@ describe("relation resource reads", () => {
       database.run("ROLLBACK TO relation_batch_test");
       database.run("RELEASE relation_batch_test");
     }
+  });
+
+  it("rejects relation trees that exceed the request-wide row budget", async () => {
+    const response = await app({ maxRows: 2 }).handle(
+      request(
+        "/projects?id=lte.2&select=id,tasks(id)&order=id.asc&tasks.order=id.asc",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await errorCode(response)).toBe("SLREST103");
   });
 });
