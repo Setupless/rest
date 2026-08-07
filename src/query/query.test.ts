@@ -78,6 +78,7 @@ describe("parseRestQuery", () => {
       offset: 2,
       limit: 100,
       pagination: "query",
+      paginationExplicit: true,
       countExact: true,
       singular: true,
     });
@@ -90,6 +91,7 @@ describe("parseRestQuery", () => {
     expect(query.offset).toBe(0);
     expect(query.limit).toBe(100);
     expect(query.pagination).toBe("query");
+    expect(query.paginationExplicit).toBe(false);
     expect(query.countExact).toBe(false);
     expect(query.singular).toBe(false);
   });
@@ -136,6 +138,7 @@ describe("parseRestQuery", () => {
       offset: 2,
       limit: 3,
       pagination: "range",
+      paginationExplicit: true,
     });
   });
 
