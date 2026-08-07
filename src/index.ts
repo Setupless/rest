@@ -55,6 +55,10 @@ export {
   executeRead,
   type ReadExecutionResult,
 } from "./execution/read";
+export {
+  executeRelationRead,
+  type RelationExecutionContext,
+} from "./execution/relations";
 export { executeUpdate } from "./execution/update";
 export {
   type AuthorizationPhase,

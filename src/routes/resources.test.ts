@@ -242,10 +242,7 @@ describe("scalar resource routes", () => {
     ).toBe(3);
   });
 
-  it("rejects embedded reads, unknown/internal resources, extra paths, and unsupported methods", async () => {
-    const embedded = await app().handle(
-      request("/records?select=id,related(id)"),
-    );
+  it("rejects unknown/internal resources, extra paths, and unsupported methods", async () => {
     const unknown = await app().handle(request("/missing"));
     const internal = await app().handle(request("/sqlite_sequence"));
     const extra = await app().handle(request("/records/1"));
@@ -257,7 +254,6 @@ describe("scalar resource routes", () => {
       request("/records", { method: "PROPFIND" }),
     );
 
-    expect(await errorCode(embedded)).toBe("SLREST103");
     expect(await errorCode(unknown)).toBe("SLREST200");
     expect(await errorCode(internal)).toBe("SLREST200");
     expect(await errorCode(extra)).toBe("SLREST200");

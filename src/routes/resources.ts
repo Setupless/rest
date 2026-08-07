@@ -14,6 +14,7 @@ import type {
 import { executeDelete } from "../execution/delete";
 import { executeInsert, type MutationResult } from "../execution/insert";
 import { executeRead, type ReadExecutionResult } from "../execution/read";
+import { executeRelationRead } from "../execution/relations";
 import { executeUpdate } from "../execution/update";
 import {
   type AuthorizationPhase,
@@ -108,6 +109,10 @@ function getResourceName(request: Request): string {
 
 function getOptionsAllow(resource: DatabaseResource): string {
   return resource.writable ? WRITE_METHODS : READ_ONLY_METHODS;
+}
+
+function hasEmbeddedSelection(query: RestQuery): boolean {
+  return query.selection.some((selection) => selection.kind === "relation");
 }
 
 function rejectEmbeddedSelection(query: RestQuery): void {
@@ -207,7 +212,6 @@ async function handleRead(
     dependencies.queryConfig,
     dependencies.relationships,
   );
-  rejectEmbeddedSelection(query);
   const authorization = await dependencies.authorization.resolve({
     request,
     resource,
@@ -218,12 +222,23 @@ async function handleRead(
     query.singular && query.limit > 2
       ? Object.freeze({ ...query, limit: 2 })
       : query;
-  const result = executeRead(
-    dependencies.database,
-    resource,
-    executionQuery,
-    authorization,
-  );
+  const result = hasEmbeddedSelection(query)
+    ? await executeRelationRead(
+        {
+          ...dependencies,
+          request,
+          config: dependencies.queryConfig,
+        },
+        resource,
+        executionQuery,
+        authorization,
+      )
+    : executeRead(
+        dependencies.database,
+        resource,
+        executionQuery,
+        authorization,
+      );
   const representation = query.singular ? singularResult(result) : result.rows;
   const headers = new Headers({
     "Content-Range": getContentRange(result),
