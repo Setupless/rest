@@ -34,14 +34,17 @@ export function executeDelete(
       authorization,
     );
     const rows: Readonly<Record<string, unknown>>[] = [];
+    const firstTarget = targets[0];
+    const statement =
+      firstTarget === undefined
+        ? undefined
+        : database.query<DeleteResult, SQLQueryBindings[]>(
+            `DELETE FROM ${quoteIdentifier(resource.name)} WHERE ${compileIdentity(resource, firstTarget.identity).sql} RETURNING 1 AS ${quoteIdentifier("__slrest_deleted")}`,
+          );
 
     for (const target of targets) {
       const identity = compileIdentity(resource, target.identity);
-      const returned = database
-        .query<DeleteResult, SQLQueryBindings[]>(
-          `DELETE FROM ${quoteIdentifier(resource.name)} WHERE ${identity.sql} RETURNING 1 AS ${quoteIdentifier("__slrest_deleted")}`,
-        )
-        .get(...identity.parameters);
+      const returned = statement?.get(...identity.parameters) ?? null;
       if (returned?.__slrest_deleted === 1) rows.push(target.selected);
     }
 

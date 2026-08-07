@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import type { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -99,7 +99,7 @@ describe("filtered update and delete routes", () => {
   let database: Database;
 
   beforeEach(() => {
-    database = new Database(":memory:", { strict: true });
+    database = openDatabase({ path: ":memory:", busyTimeoutMs: 0 });
     database.run(SCHEMA);
   });
 
