@@ -1,4 +1,5 @@
 import type { Database } from "./database";
+import { foldSQLiteIdentifier } from "./identifier";
 
 export type SQLiteAffinity = "integer" | "real" | "text" | "blob" | "numeric";
 
@@ -89,6 +90,13 @@ export interface DatabaseSchema {
   listResources(): readonly DatabaseResource[];
 }
 
+const rowidResources = new WeakSet<DatabaseResource>();
+
+/** @internal Reports whether startup metadata identified an ordinary rowid table. */
+export function hasSQLiteRowid(resource: DatabaseResource): boolean {
+  return rowidResources.has(resource);
+}
+
 /** Computes SQLite affinity using the documented, order-dependent rules. */
 export function getSQLiteAffinity(declaredType: string): SQLiteAffinity {
   const normalizedType = declaredType.toUpperCase();
@@ -128,12 +136,6 @@ function compareStringArrays(
   }
 
   return left.length - right.length;
-}
-
-function foldSQLiteIdentifier(identifier: string): string {
-  return identifier.replace(/[A-Z]/g, (character) =>
-    String.fromCharCode(character.charCodeAt(0) + 32),
-  );
 }
 
 function loadUniqueConstraints(
@@ -462,6 +464,19 @@ export function loadDatabaseSchema(database: Database): DatabaseSchema {
         }),
       ),
     );
+    const metadataByResource = new Map(
+      resourceRows.map((row) => [row.name, row]),
+    );
+    for (const resource of resources) {
+      const metadata = metadataByResource.get(resource.name);
+      if (
+        resource.kind === "table" &&
+        metadata !== undefined &&
+        metadata.without_rowid === 0
+      ) {
+        rowidResources.add(resource);
+      }
+    }
     const resourcesByName = new Map(
       resources.map((resource) => [resource.name, resource]),
     );
