@@ -70,6 +70,7 @@ interface IndexColumnRow {
   sequence: number;
   column_id: number;
   name: string | null;
+  collation: string | null;
   key: 0 | 1;
 }
 
@@ -91,10 +92,24 @@ export interface DatabaseSchema {
 }
 
 const rowidResources = new WeakSet<DatabaseResource>();
+const uniqueConstraintCollations = new WeakMap<
+  DatabaseUniqueConstraint,
+  readonly string[]
+>();
 
 /** @internal Reports whether startup metadata identified an ordinary rowid table. */
 export function hasSQLiteRowid(resource: DatabaseResource): boolean {
   return rowidResources.has(resource);
+}
+
+/** @internal Returns the SQLite comparison collation for each target column. */
+export function getSQLiteUniqueConstraintCollations(
+  constraint: DatabaseUniqueConstraint,
+): readonly string[] {
+  return (
+    uniqueConstraintCollations.get(constraint) ??
+    Object.freeze(constraint.columns.map(() => "BINARY"))
+  );
 }
 
 /** Computes SQLite affinity using the documented, order-dependent rules. */
@@ -145,17 +160,32 @@ function loadUniqueConstraints(
   indexXInfoQuery: NamedPragmaQuery<IndexColumnRow>,
 ): readonly DatabaseUniqueConstraint[] {
   const constraints: DatabaseUniqueConstraint[] = [];
+  const indexRows = indexListQuery.all(resourceName);
 
   if (primaryKey.length > 0) {
-    constraints.push(
-      Object.freeze({
-        columns: primaryKey,
-        primary: true,
-      }),
-    );
+    const constraint = Object.freeze({
+      columns: primaryKey,
+      primary: true,
+    });
+    const primaryIndex = indexRows.find((index) => index.origin === "pk");
+    const primaryIndexColumns =
+      primaryIndex === undefined
+        ? []
+        : indexXInfoQuery
+            .all(primaryIndex.name)
+            .filter((column) => column.key === 1)
+            .sort((left, right) => left.sequence - right.sequence);
+    const collations =
+      primaryIndexColumns.length === primaryKey.length &&
+      primaryIndexColumns.every(
+        (column, index) => column.name === primaryKey[index],
+      )
+        ? primaryIndexColumns.map((column) => column.collation ?? "BINARY")
+        : primaryKey.map(() => "BINARY");
+    uniqueConstraintCollations.set(constraint, Object.freeze(collations));
+    constraints.push(constraint);
   }
 
-  const indexRows = indexListQuery.all(resourceName);
   const uniqueIndexes = indexRows
     .filter(
       (index) =>
@@ -185,12 +215,15 @@ function loadUniqueConstraints(
     }
     if (!representable) continue;
 
-    constraints.push(
-      Object.freeze({
-        columns: Object.freeze(columns),
-        primary: false,
-      }),
+    const constraint = Object.freeze({
+      columns: Object.freeze(columns),
+      primary: false,
+    });
+    uniqueConstraintCollations.set(
+      constraint,
+      Object.freeze(keyColumns.map((column) => column.collation ?? "BINARY")),
     );
+    constraints.push(constraint);
   }
 
   constraints.sort(
@@ -347,6 +380,7 @@ export function loadDatabaseSchema(database: Database): DatabaseSchema {
          seqno AS sequence,
          cid AS column_id,
          name,
+         coll AS collation,
          key
        FROM pragma_index_xinfo(?, 'main')`,
     );

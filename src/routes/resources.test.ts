@@ -178,7 +178,7 @@ describe("scalar resource routes", () => {
     expect(await head.text()).toBe("");
     expect(tableOptions.status).toBe(204);
     expect(tableOptions.headers.get("Allow")).toBe(
-      "GET, HEAD, OPTIONS, POST, PATCH, DELETE",
+      "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT",
     );
     expect(viewOptions.headers.get("Allow")).toBe("GET, HEAD, OPTIONS");
   });
@@ -251,7 +251,7 @@ describe("scalar resource routes", () => {
     const extra = await app().handle(request("/records/1"));
     const trailing = await app().handle(request("/records/"));
     const unsupported = await app().handle(
-      request("/records", { method: "PUT" }),
+      request("/record_view", { method: "PUT" }),
     );
 
     expect(await errorCode(embedded)).toBe("SLREST103");
@@ -260,8 +260,6 @@ describe("scalar resource routes", () => {
     expect(await errorCode(extra)).toBe("SLREST200");
     expect(await errorCode(trailing)).toBe("SLREST200");
     expect(unsupported.status).toBe(405);
-    expect(unsupported.headers.get("Allow")).toBe(
-      "GET, HEAD, OPTIONS, POST, PATCH, DELETE",
-    );
+    expect(unsupported.headers.get("Allow")).toBe("GET, HEAD, OPTIONS");
   });
 });

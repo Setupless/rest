@@ -27,12 +27,19 @@ export interface MutationTarget {
   readonly selected: Readonly<Record<string, unknown>>;
 }
 
+export interface MutationPostImage {
+  readonly complete: Readonly<Record<string, unknown>>;
+  readonly selected: Readonly<Record<string, unknown>>;
+}
+
 type SqlRow = Record<string, unknown>;
 
 const IDENTITY_VALUE_PREFIX = "__slrest_identity_value_";
 const IDENTITY_TYPE_PREFIX = "__slrest_identity_type_";
 const SELECTED_VALUE_PREFIX = "__slrest_selected_value_";
 const SELECTED_TYPE_PREFIX = "__slrest_selected_type_";
+const COMPLETE_VALUE_PREFIX = "__slrest_complete_value_";
+const COMPLETE_TYPE_PREFIX = "__slrest_complete_type_";
 
 function getRowidColumn(
   resource: DatabaseResource,
@@ -176,6 +183,55 @@ function serializeSelectedRow(
   return Object.freeze(selected);
 }
 
+function serializeCompleteRow(
+  row: SqlRow,
+  resource: DatabaseResource,
+): Readonly<Record<string, unknown>> {
+  const complete: Record<string, unknown> = Object.create(null);
+  for (let index = 0; index < resource.columns.length; index += 1) {
+    const column = resource.columns[index];
+    if (column === undefined) continue;
+    const storageType = row[`${COMPLETE_TYPE_PREFIX}${index}`];
+    const rawValue = row[`${COMPLETE_VALUE_PREFIX}${index}`];
+    const exactValue =
+      storageType === "integer" && typeof rawValue === "string"
+        ? BigInt(rawValue)
+        : rawValue;
+    complete[column.name] = serializeSQLiteValue(
+      exactValue,
+      column,
+      resource.name,
+      typeof storageType === "string" ? storageType : undefined,
+    );
+  }
+  return Object.freeze(complete);
+}
+
+function selectFromComplete(
+  complete: Readonly<Record<string, unknown>>,
+  resource: DatabaseResource,
+  query: RestQuery,
+): Readonly<Record<string, unknown>> {
+  const selected: Record<string, unknown> = Object.create(null);
+  for (const selection of query.selection) {
+    if (selection.kind !== "column") {
+      throw new RestError("SLREST103", {
+        details:
+          "Embedded relation selection is not available for mutation representations.",
+        hint: "Select scalar columns only until relation execution is enabled.",
+      });
+    }
+    const column = getFilterColumn(resource, selection.column);
+    if (column === undefined) {
+      throw new RestError("SLREST101", {
+        details: `Column ${JSON.stringify(selection.column)} does not exist on resource ${JSON.stringify(resource.name)}.`,
+      });
+    }
+    selected[selection.alias ?? selection.column] = complete[column.name];
+  }
+  return Object.freeze(selected);
+}
+
 function compileOrder(resourceAlias: string, query: RestQuery): string {
   if (query.order.length === 0) return "";
   const quotedAlias = quoteIdentifier(resourceAlias);
@@ -280,7 +336,18 @@ export function compileIdentity(
 }
 
 export function getReturningIdentitySql(resource: DatabaseResource): string {
-  return identityProjections(resource).join(", ");
+  const projections = identityProjections(resource);
+  if (projections.length === 0) throw unstableIdentity(resource);
+  return projections.join(", ");
+}
+
+export function getIdentityProjectionSql(
+  resource: DatabaseResource,
+  alias: string,
+): string {
+  const projections = identityProjections(resource, quoteIdentifier(alias));
+  if (projections.length === 0) throw unstableIdentity(resource);
+  return projections.join(", ");
 }
 
 export function getReturnedIdentity(
@@ -288,6 +355,57 @@ export function getReturnedIdentity(
   row: SqlRow,
 ): MutationIdentity {
   return parseIdentity(resource, row);
+}
+
+/** Re-reads one UPDATE post-image, enforcing its policy check before commit. */
+export function readMutationPostImage(
+  database: Database,
+  resource: DatabaseResource,
+  identity: MutationIdentity,
+  query: RestQuery,
+  authorization: ResolvedAuthorization,
+  operation: "insert" | "update",
+): MutationPostImage {
+  const alias = "__slrest_post_image";
+  const quotedAlias = quoteIdentifier(alias);
+  const identityFilter = compileIdentity(resource, identity, alias);
+  const check =
+    authorization.check === undefined
+      ? undefined
+      : compileRestFilter(authorization.check, resource, alias);
+  const projections = [
+    ...resource.columns.flatMap((column, index) =>
+      exactProjection(
+        `${quotedAlias}.${quoteIdentifier(column.name)}`,
+        `${COMPLETE_VALUE_PREFIX}${index}`,
+        `${COMPLETE_TYPE_PREFIX}${index}`,
+      ),
+    ),
+    check === undefined
+      ? `1 AS ${quoteIdentifier("__slrest_allowed")}`
+      : `CASE WHEN ${check.sql} THEN 1 ELSE 0 END AS ${quoteIdentifier("__slrest_allowed")}`,
+  ];
+  const parameters: SQLQueryBindings[] = [
+    ...((check?.parameters ?? []) as readonly SQLQueryBindings[]),
+    ...identityFilter.parameters,
+  ];
+  const rows = database
+    .query<SqlRow, SQLQueryBindings[]>(
+      `SELECT ${projections.join(", ")} FROM ${quoteIdentifier(resource.name)} AS ${quotedAlias} WHERE ${identityFilter.sql} LIMIT 2`,
+    )
+    .all(...parameters);
+  const row = rows[0];
+  if (rows.length !== 1 || row === undefined) throw unstableIdentity(resource);
+  if (row.__slrest_allowed !== 1) {
+    throw new RestError("SLREST405", {
+      details: `The ${operation} post-image did not satisfy the authorization check.`,
+    });
+  }
+  const complete = serializeCompleteRow(row, resource);
+  return Object.freeze({
+    complete,
+    selected: selectFromComplete(complete, resource, query),
+  });
 }
 
 /** Re-reads one UPDATE post-image, enforcing its policy check before commit. */
@@ -329,6 +447,48 @@ export function readUpdatePostImage(
     });
   }
   return serializeSelectedRow(row, resource, query);
+}
+
+function locationValue(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return String(value);
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function encodeLocationComponent(value: string): string {
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+/** Builds the canonical location for exactly one complete primary-key image. */
+export function buildMutationLocation(
+  resource: DatabaseResource,
+  postImages: readonly MutationPostImage[],
+): string | null {
+  const postImage = postImages.length === 1 ? postImages[0] : undefined;
+  if (postImage === undefined || resource.primaryKey.length === 0) return null;
+
+  const filters: string[] = [];
+  for (const column of resource.primaryKey) {
+    const value = locationValue(postImage.complete[column]);
+    if (value === undefined) return null;
+    filters.push(
+      `${encodeLocationComponent(column)}=eq.${encodeLocationComponent(value)}`,
+    );
+  }
+  return `/${encodeLocationComponent(resource.name)}?${filters.join("&")}`;
 }
 
 export function assertSingularMutation(
