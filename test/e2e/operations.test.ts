@@ -4,7 +4,39 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createE2EDatabase } from "./fixture";
-import { expectErrorCode, startE2EServer, useE2EServer } from "./server";
+import {
+  type E2EServer,
+  expectErrorCode,
+  startE2EServer,
+  useE2EServer,
+} from "./server";
+
+/** Waits for one complete JSON-lines completion record from the child process. */
+async function waitForCompletionLog(
+  server: E2EServer,
+  requestId: string,
+): Promise<{
+  lines: Record<string, unknown>[];
+  completion: Record<string, unknown>;
+}> {
+  const deadline = Date.now() + 2_000;
+  while (Date.now() < deadline) {
+    const stdout = server.diagnostics().stdout;
+    const finalNewline = stdout.lastIndexOf("\n");
+    const lines = (finalNewline < 0 ? "" : stdout.slice(0, finalNewline))
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const completion = lines.find(
+      (line) =>
+        line.event === "request.completed" && line.requestId === requestId,
+    );
+    if (completion !== undefined) return { lines, completion };
+    await Bun.sleep(10);
+  }
+
+  throw new Error(`Timed out waiting for completion log ${requestId}`);
+}
 
 describe("black-box operational HTTP behavior", () => {
   const server = useE2EServer({
@@ -74,17 +106,9 @@ describe("black-box operational HTTP behavior", () => {
     await server.request("/tasks?title=eq.log-secret-canary", {
       headers: { "X-Request-Id": "logging-contract" },
     });
-    await Bun.sleep(10);
-    const lines = server
-      .diagnostics()
-      .stdout.trim()
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as Record<string, unknown>);
-    const completion = lines.find(
-      (line) =>
-        line.event === "request.completed" &&
-        line.requestId === "logging-contract",
+    const { lines, completion } = await waitForCompletionLog(
+      server,
+      "logging-contract",
     );
 
     expect(completion).toMatchObject({
@@ -131,29 +155,32 @@ describe("black-box database and process lifecycle", () => {
 
     try {
       const first = await startE2EServer({ databasePath });
-      const inserted = await first.request("/tasks", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Prefer: "missing=default",
-        },
-        body: JSON.stringify({
-          id: 70,
-          project_id: 10,
-          title: "Persist after shutdown",
-        }),
-      });
-      expect(inserted.status).toBe(201);
-
-      const writer = new Database(databasePath, { strict: true });
       try {
-        writer.run("CREATE TABLE late_resource (id INTEGER PRIMARY KEY)");
+        const inserted = await first.request("/tasks", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Prefer: "missing=default",
+          },
+          body: JSON.stringify({
+            id: 70,
+            project_id: 10,
+            title: "Persist after shutdown",
+          }),
+        });
+        expect(inserted.status).toBe(201);
+
+        const writer = new Database(databasePath, { strict: true });
+        try {
+          writer.run("CREATE TABLE late_resource (id INTEGER PRIMARY KEY)");
+        } finally {
+          writer.close();
+        }
+        const stale = await first.request("/late_resource");
+        await expectErrorCode(stale, "SLREST200");
       } finally {
-        writer.close();
+        await first.stop("SIGTERM");
       }
-      const stale = await first.request("/late_resource");
-      await expectErrorCode(stale, "SLREST200");
-      await first.stop("SIGTERM");
 
       const persisted = new Database(databasePath, {
         readonly: true,
@@ -191,21 +218,29 @@ describe("black-box database and process lifecycle", () => {
 
     try {
       const server = await startE2EServer({ databasePath, busyTimeoutMs: 0 });
-      const locker = new Database(databasePath, { strict: true });
       try {
-        locker.run("BEGIN IMMEDIATE");
-        const response = await server.request("/tasks?id=eq.1", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ priority: 1 }),
-        });
+        const locker = new Database(databasePath, { strict: true });
+        try {
+          let transactionStarted = false;
+          try {
+            locker.run("BEGIN IMMEDIATE");
+            transactionStarted = true;
+            const response = await server.request("/tasks?id=eq.1", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ priority: 1 }),
+            });
 
-        expect(response.status).toBe(503);
-        expect(response.headers.get("Retry-After")).toBe("1");
-        await expectErrorCode(response, "SLREST502");
+            expect(response.status).toBe(503);
+            expect(response.headers.get("Retry-After")).toBe("1");
+            await expectErrorCode(response, "SLREST502");
+          } finally {
+            if (transactionStarted) locker.run("ROLLBACK");
+          }
+        } finally {
+          locker.close();
+        }
       } finally {
-        locker.run("ROLLBACK");
-        locker.close();
         await server.stop();
       }
     } finally {

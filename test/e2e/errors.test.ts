@@ -93,6 +93,7 @@ describe("black-box stable error families", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: canary }),
     });
+    expect(response.ok).toBeFalse();
     const body = await response.text();
     const diagnostics = JSON.stringify(server.diagnostics());
 

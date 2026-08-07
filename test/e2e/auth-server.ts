@@ -4,6 +4,7 @@ import { createJsonLogger } from "../../src/logging/logger";
 import { serveRest } from "../../src/server";
 
 const auth: RestAuthPlugin = {
+  /** Applies deterministic restrictive policies for black-box plugin coverage. */
   authorize({ request, table, operation }) {
     const credential = request.headers.get("X-E2E-Auth");
 

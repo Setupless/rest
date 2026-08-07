@@ -58,3 +58,6 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: E2E contract tests
+        run: bun run test:e2e

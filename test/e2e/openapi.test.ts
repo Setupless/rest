@@ -65,9 +65,13 @@ describe("black-box API discovery", () => {
       headers: { Accept: "text/csv" },
     });
 
+    expect(json.status).toBe(200);
     expect(json.headers.get("Content-Type")).toBe(
       "application/json; charset=utf-8",
     );
+    expect((await json.json()) as { openapi: string }).toMatchObject({
+      openapi: "3.1.0",
+    });
     await expectErrorCode(unsupported, "SLREST105");
   });
 });
