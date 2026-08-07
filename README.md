@@ -53,7 +53,8 @@ present in this prototype:
 
 ## Local development
 
-You will need [Bun](https://bun.sh/) to run the project.
+You will need [Bun 1.3.14](https://bun.sh/) to run the project. The required
+stable version is recorded in `.bun-version` and is also used by CI.
 
 1. Install dependencies with `bun install`.
 2. Copy `.env.example` to `.env`.
@@ -101,13 +102,20 @@ Run the automated checks before opening a pull request:
 ```sh
 bun run check
 bun run typecheck
-bun run test
+bun run test:coverage
+bun run build
 bun run test:e2e
+bun audit
 ```
 
 The end-to-end command builds `dist/cli.js`, starts it as an isolated child
 process against temporary on-disk SQLite databases, and verifies the documented
 HTTP and authorization contract over real network requests.
+
+Coverage must remain at or above 85% overall for lines and functions, and at or
+above 90% for the query, authentication, schema, and execution modules. Test
+fixtures, test files, generated declarations, the type-only auth contract, and
+the barrel-only public entrypoint are excluded from those measurements.
 
 Setupless/rest is inspired by PostgREST but is not affiliated with or endorsed
 by the PostgREST project.
