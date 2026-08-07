@@ -4,16 +4,21 @@ import { foldSQLiteIdentifier } from "../database/identifier";
 import type { DatabaseRelationshipGraph } from "../database/relationships";
 import type { DatabaseResource, DatabaseSchema } from "../database/schema";
 import { executeDelete } from "../execution/delete";
-import { executeInsert } from "../execution/insert";
+import { executeInsert, type MutationResult } from "../execution/insert";
 import { executeRead, type ReadExecutionResult } from "../execution/read";
 import { executeUpdate } from "../execution/update";
 import { RestError, toErrorResponse } from "../http/errors";
 import {
   getResponseContentType,
   negotiateResponseMediaType,
+  type RestMediaType,
   validateRequestMediaType,
 } from "../http/media-type";
-import { getPreferenceApplied, parsePreferences } from "../http/preferences";
+import {
+  getPreferenceApplied,
+  parsePreferences,
+  type RestPreferences,
+} from "../http/preferences";
 import {
   parseRestQuery,
   type RestQuery,
@@ -135,6 +140,39 @@ function jsonBody(value: unknown): string {
   } catch {
     throw new RestError("SLREST504");
   }
+}
+
+function createMutationResponse(options: {
+  readonly result: MutationResult;
+  readonly query: RestQuery;
+  readonly preferences: RestPreferences;
+  readonly mediaType: RestMediaType;
+  readonly preferenceApplied: string | null;
+  readonly requestId: string;
+  readonly status: number;
+}): Response {
+  const headers = new Headers({ "X-Request-Id": options.requestId });
+  if (options.preferenceApplied !== null) {
+    headers.set("Preference-Applied", options.preferenceApplied);
+  }
+  if (options.preferences.count === "exact") {
+    headers.set("Range-Unit", "items");
+    headers.set(
+      "Content-Range",
+      options.result.affected === 0
+        ? "*/0"
+        : `0-${options.result.affected - 1}/${options.result.affected}`,
+    );
+  }
+
+  let body: string | null = null;
+  if (options.preferences.return === "representation") {
+    headers.set("Content-Type", getResponseContentType(options.mediaType));
+    body = jsonBody(
+      options.query.singular ? options.result.rows[0] : options.result.rows,
+    );
+  }
+  return new Response(body, { status: options.status, headers });
 }
 
 async function handleRead(
@@ -268,29 +306,19 @@ async function handleInsert(
     preferences,
     authorization,
   );
-  const headers = new Headers({ "X-Request-Id": id });
-  if (preferenceApplied !== null) {
-    headers.set("Preference-Applied", preferenceApplied);
-  }
-  if (preferences.count === "exact") {
-    headers.set("Range-Unit", "items");
-    headers.set(
-      "Content-Range",
-      result.affected === 0
-        ? "*/0"
-        : `0-${result.affected - 1}/${result.affected}`,
-    );
-  }
+  const response = createMutationResponse({
+    result,
+    query,
+    preferences,
+    mediaType,
+    preferenceApplied,
+    requestId: id,
+    status: 201,
+  });
   if (preferences.return === "headers-only" && result.location !== null) {
-    headers.set("Location", result.location);
+    response.headers.set("Location", result.location);
   }
-
-  let body: string | null = null;
-  if (preferences.return === "representation") {
-    headers.set("Content-Type", getResponseContentType(mediaType));
-    body = jsonBody(query.singular ? result.rows[0] : result.rows);
-  }
-  return new Response(body, { status: 201, headers });
+  return response;
 }
 
 function assertMutationControls(request: Request): void {
@@ -353,28 +381,14 @@ async function handleFilteredMutation(
           authorization,
         );
 
-  const headers = new Headers({ "X-Request-Id": id });
-  if (preferenceApplied !== null) {
-    headers.set("Preference-Applied", preferenceApplied);
-  }
-  if (preferences.count === "exact") {
-    headers.set("Range-Unit", "items");
-    headers.set(
-      "Content-Range",
-      result.affected === 0
-        ? "*/0"
-        : `0-${result.affected - 1}/${result.affected}`,
-    );
-  }
-
-  let body: string | null = null;
-  if (preferences.return === "representation") {
-    headers.set("Content-Type", getResponseContentType(mediaType));
-    body = jsonBody(query.singular ? result.rows[0] : result.rows);
-  }
-  return new Response(body, {
+  return createMutationResponse({
+    result,
+    query,
+    preferences,
+    mediaType,
+    preferenceApplied,
+    requestId: id,
     status: preferences.return === "representation" ? 200 : 204,
-    headers,
   });
 }
 
