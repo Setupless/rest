@@ -1,5 +1,6 @@
 import type { RestAuthorizationResolver } from "../auth/types";
 import type { Database } from "../database/database";
+import { foldSQLiteIdentifier } from "../database/identifier";
 import type { DatabaseRelationshipGraph } from "../database/relationships";
 import type { DatabaseResource, DatabaseSchema } from "../database/schema";
 import { executeInsert } from "../execution/insert";
@@ -29,19 +30,12 @@ export interface ResourceRouteDependencies {
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const READ_ONLY_METHODS = "GET, HEAD, OPTIONS";
 const INSERT_METHODS = "GET, HEAD, OPTIONS, POST";
-const WRITABLE_METHODS = "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT";
 
 function requestId(request: Request): string {
   const supplied = request.headers.get("X-Request-Id");
   return supplied !== null && REQUEST_ID_PATTERN.test(supplied)
     ? supplied
     : crypto.randomUUID();
-}
-
-function foldSQLiteIdentifier(identifier: string): string {
-  return identifier.replace(/[A-Z]/g, (character) =>
-    String.fromCharCode(character.charCodeAt(0) + 32),
-  );
 }
 
 function resolveResource(
@@ -88,7 +82,7 @@ function getResourceName(request: Request): string {
 }
 
 function getOptionsAllow(resource: DatabaseResource): string {
-  return resource.writable ? WRITABLE_METHODS : READ_ONLY_METHODS;
+  return resource.writable ? INSERT_METHODS : READ_ONLY_METHODS;
 }
 
 function rejectEmbeddedSelection(query: RestQuery): void {

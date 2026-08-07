@@ -1,3 +1,4 @@
+import { foldSQLiteIdentifier } from "../database/identifier";
 import type { DatabaseColumn, DatabaseResource } from "../database/schema";
 import { RestError } from "../http/errors";
 
@@ -58,12 +59,6 @@ const SQLITE_NUMERIC_PREFIX_PATTERN =
   /^[\t\n\v\f\r ]*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/;
 const SIGNED_64_MIN = -(2n ** 63n);
 const SIGNED_64_MAX = 2n ** 63n - 1n;
-
-function foldSQLiteIdentifier(identifier: string): string {
-  return identifier.replace(/[A-Z]/g, (character) =>
-    String.fromCharCode(character.charCodeAt(0) + 32),
-  );
-}
 
 /** @internal Resolves a public field to immutable startup metadata. */
 export function getFilterColumn(

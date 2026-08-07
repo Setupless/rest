@@ -177,9 +177,7 @@ describe("scalar resource routes", () => {
     expect(head.headers.get("Content-Range")).toBe("0-0/*");
     expect(await head.text()).toBe("");
     expect(tableOptions.status).toBe(204);
-    expect(tableOptions.headers.get("Allow")).toBe(
-      "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT",
-    );
+    expect(tableOptions.headers.get("Allow")).toBe("GET, HEAD, OPTIONS, POST");
     expect(viewOptions.headers.get("Allow")).toBe("GET, HEAD, OPTIONS");
   });
 

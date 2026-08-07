@@ -1,6 +1,7 @@
 import { SQLiteError, type SQLQueryBindings } from "bun:sqlite";
 import type { ResolvedAuthorization } from "../auth/types";
 import type { Database } from "../database/database";
+import { foldSQLiteIdentifier } from "../database/identifier";
 import {
   type DatabaseColumn,
   type DatabaseResource,
@@ -8,6 +9,7 @@ import {
 } from "../database/schema";
 import { RestError } from "../http/errors";
 import type { RestPreferences } from "../http/preferences";
+import { getFilterColumn } from "../query/filter";
 import { compileRestFilter } from "../query/filter-compiler";
 import type { RestQuery } from "../query/query";
 import { serializeSQLiteValue } from "../serialization/value";
@@ -121,12 +123,6 @@ function primaryKeyReturning(resource: DatabaseResource): string {
     ];
   });
   return ` RETURNING ${projections.join(", ")}`;
-}
-
-function foldSQLiteIdentifier(identifier: string): string {
-  return identifier.replace(/[A-Z]/g, (character) =>
-    String.fromCharCode(character.charCodeAt(0) + 32),
-  );
 }
 
 function getRowidColumn(
@@ -315,7 +311,13 @@ function readPostImage(
         hint: "Select scalar columns only until relation execution is enabled.",
       });
     }
-    selected[selection.alias ?? selection.column] = complete[selection.column];
+    const column = getFilterColumn(resource, selection.column);
+    if (column === undefined) {
+      throw new RestError("SLREST101", {
+        details: `Column ${JSON.stringify(selection.column)} does not exist on resource ${JSON.stringify(resource.name)}.`,
+      });
+    }
+    selected[selection.alias ?? selection.column] = complete[column.name];
   }
   return Object.freeze({ complete, selected: Object.freeze(selected) });
 }
