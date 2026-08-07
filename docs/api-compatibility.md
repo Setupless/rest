@@ -377,8 +377,10 @@ HTTP/1.1 200 OK
 Normal embedding is left-preserving: embedded filters do not remove a root
 row. Relations are recursively supported through `MAX_EMBED_DEPTH` (default 5),
 including cycles below the limit. Every relation page is independently capped
-by `MAX_ROWS` (default 1000). Deeper requests return `SLREST110`; absent and
-ambiguous relations return `SLREST202` and `SLREST203`.
+by `MAX_ROWS` (default 1000), and the complete tree may materialize at most
+`MAX_ROWS` related rows across the response. Exceeding that request-wide budget
+returns `SLREST103`. Deeper requests return `SLREST110`; absent and ambiguous
+relations return `SLREST202` and `SLREST203`.
 
 ## Pagination, counts, and singular responses
 
