@@ -35,6 +35,8 @@ export interface RestQuery {
   readonly limit: number;
   /** Retains the source needed to distinguish explicit-range and query offsets. */
   readonly pagination: PaginationSource;
+  /** True when limit, offset, or an item Range was explicitly requested. */
+  readonly paginationExplicit: boolean;
   readonly countExact: boolean;
   readonly singular: boolean;
 }
@@ -234,6 +236,7 @@ function buildQuery(
     offset: pagination.offset,
     limit: pagination.limit,
     pagination: pagination.source,
+    paginationExplicit: pagination.explicit,
     countExact: options.countExact,
     singular: options.singular,
   });

@@ -18,14 +18,16 @@ describe("parsePagination", () => {
       offset: 0,
       limit: 100,
       source: "query",
+      explicit: false,
     });
     expect(
       parsePagination(new URLSearchParams("limit=200&offset=3"), 100),
-    ).toEqual({ offset: 3, limit: 100, source: "query" });
+    ).toEqual({ offset: 3, limit: 100, source: "query", explicit: true });
     expect(parsePagination(new URLSearchParams("limit=0"), 100)).toEqual({
       offset: 0,
       limit: 0,
       source: "query",
+      explicit: true,
     });
   });
 
@@ -51,17 +53,17 @@ describe("parsePagination", () => {
       parsePagination(new URLSearchParams(), 100, {
         headers: new Headers({ Range: "10-19", "Range-Unit": "items" }),
       }),
-    ).toEqual({ offset: 10, limit: 10, source: "range" });
+    ).toEqual({ offset: 10, limit: 10, source: "range", explicit: true });
     expect(
       parsePagination(new URLSearchParams(), 5, {
         headers: new Headers({ Range: "10-" }),
       }),
-    ).toEqual({ offset: 10, limit: 5, source: "range" });
+    ).toEqual({ offset: 10, limit: 5, source: "range", explicit: true });
     expect(
       parsePagination(new URLSearchParams(), 5, {
         headers: new Headers({ Range: "0-9007199254740991" }),
       }),
-    ).toEqual({ offset: 0, limit: 5, source: "range" });
+    ).toEqual({ offset: 0, limit: 5, source: "range", explicit: true });
   });
 
   it("uses Range over query controls under lenient handling", () => {
@@ -69,12 +71,12 @@ describe("parsePagination", () => {
       parsePagination(new URLSearchParams("limit=1&offset=2"), 100, {
         headers: new Headers({ Range: "8-9" }),
       }),
-    ).toEqual({ offset: 8, limit: 2, source: "range" });
+    ).toEqual({ offset: 8, limit: 2, source: "range", explicit: true });
     expect(
       parsePagination(new URLSearchParams("limit=malformed&offset=-1"), 100, {
         headers: new Headers({ Range: "8-9" }),
       }),
-    ).toEqual({ offset: 8, limit: 2, source: "range" });
+    ).toEqual({ offset: 8, limit: 2, source: "range", explicit: true });
   });
 
   it("rejects Range combined with query controls under strict handling", () => {
@@ -110,7 +112,7 @@ describe("parsePagination", () => {
       parsePagination(new URLSearchParams("limit=2&offset=1"), 100, {
         headers: new Headers({ "Range-Unit": "items" }),
       }),
-    ).toEqual({ offset: 1, limit: 2, source: "query" });
+    ).toEqual({ offset: 1, limit: 2, source: "query", explicit: true });
     expectCode(
       () =>
         parsePagination(new URLSearchParams(), 100, {

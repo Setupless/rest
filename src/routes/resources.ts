@@ -3,21 +3,31 @@ import type { Database } from "../database/database";
 import { foldSQLiteIdentifier } from "../database/identifier";
 import type { DatabaseRelationshipGraph } from "../database/relationships";
 import type { DatabaseResource, DatabaseSchema } from "../database/schema";
-import { executeInsert } from "../execution/insert";
+import { executeDelete } from "../execution/delete";
+import { executeInsert, type MutationResult } from "../execution/insert";
 import { executeRead, type ReadExecutionResult } from "../execution/read";
+import { executeUpdate } from "../execution/update";
 import { RestError, toErrorResponse } from "../http/errors";
 import {
   getResponseContentType,
   negotiateResponseMediaType,
+  type RestMediaType,
   validateRequestMediaType,
 } from "../http/media-type";
-import { getPreferenceApplied, parsePreferences } from "../http/preferences";
+import {
+  getPreferenceApplied,
+  parsePreferences,
+  type RestPreferences,
+} from "../http/preferences";
 import {
   parseRestQuery,
   type RestQuery,
   type RestQueryConfig,
 } from "../query/query";
-import { parseInsertPayload } from "../validation/write-payload";
+import {
+  parseInsertPayload,
+  parseUpdatePatch,
+} from "../validation/write-payload";
 
 export interface ResourceRouteDependencies {
   readonly database: Database;
@@ -29,7 +39,7 @@ export interface ResourceRouteDependencies {
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const READ_ONLY_METHODS = "GET, HEAD, OPTIONS";
-const INSERT_METHODS = "GET, HEAD, OPTIONS, POST";
+const WRITE_METHODS = "GET, HEAD, OPTIONS, POST, PATCH, DELETE";
 
 function requestId(request: Request): string {
   const supplied = request.headers.get("X-Request-Id");
@@ -82,7 +92,7 @@ function getResourceName(request: Request): string {
 }
 
 function getOptionsAllow(resource: DatabaseResource): string {
-  return resource.writable ? INSERT_METHODS : READ_ONLY_METHODS;
+  return resource.writable ? WRITE_METHODS : READ_ONLY_METHODS;
 }
 
 function rejectEmbeddedSelection(query: RestQuery): void {
@@ -130,6 +140,39 @@ function jsonBody(value: unknown): string {
   } catch {
     throw new RestError("SLREST504");
   }
+}
+
+function createMutationResponse(options: {
+  readonly result: MutationResult;
+  readonly query: RestQuery;
+  readonly preferences: RestPreferences;
+  readonly mediaType: RestMediaType;
+  readonly preferenceApplied: string | null;
+  readonly requestId: string;
+  readonly status: number;
+}): Response {
+  const headers = new Headers({ "X-Request-Id": options.requestId });
+  if (options.preferenceApplied !== null) {
+    headers.set("Preference-Applied", options.preferenceApplied);
+  }
+  if (options.preferences.count === "exact") {
+    headers.set("Range-Unit", "items");
+    headers.set(
+      "Content-Range",
+      options.result.affected === 0
+        ? "*/0"
+        : `0-${options.result.affected - 1}/${options.result.affected}`,
+    );
+  }
+
+  let body: string | null = null;
+  if (options.preferences.return === "representation") {
+    headers.set("Content-Type", getResponseContentType(options.mediaType));
+    body = jsonBody(
+      options.query.singular ? options.result.rows[0] : options.result.rows,
+    );
+  }
+  return new Response(body, { status: options.status, headers });
 }
 
 async function handleRead(
@@ -263,32 +306,93 @@ async function handleInsert(
     preferences,
     authorization,
   );
-  const headers = new Headers({ "X-Request-Id": id });
-  if (preferenceApplied !== null) {
-    headers.set("Preference-Applied", preferenceApplied);
-  }
-  if (preferences.count === "exact") {
-    headers.set("Range-Unit", "items");
-    headers.set(
-      "Content-Range",
-      result.affected === 0
-        ? "*/0"
-        : `0-${result.affected - 1}/${result.affected}`,
-    );
-  }
+  const response = createMutationResponse({
+    result,
+    query,
+    preferences,
+    mediaType,
+    preferenceApplied,
+    requestId: id,
+    status: 201,
+  });
   if (preferences.return === "headers-only" && result.location !== null) {
-    headers.set("Location", result.location);
+    response.headers.set("Location", result.location);
   }
-
-  let body: string | null = null;
-  if (preferences.return === "representation") {
-    headers.set("Content-Type", getResponseContentType(mediaType));
-    body = jsonBody(query.singular ? result.rows[0] : result.rows);
-  }
-  return new Response(body, { status: 201, headers });
+  return response;
 }
 
-/** Creates the scalar-read and transactional-insert resource handler. */
+function assertMutationControls(request: Request): void {
+  if (new URL(request.url).searchParams.has("on_conflict")) {
+    throw new RestError("SLREST103", {
+      details: "on_conflict does not apply to PATCH or DELETE.",
+      hint: "Remove on_conflict from the mutation request.",
+    });
+  }
+}
+
+async function handleFilteredMutation(
+  request: Request,
+  resource: DatabaseResource,
+  dependencies: ResourceRouteDependencies,
+  id: string,
+): Promise<Response> {
+  const method = request.method === "PATCH" ? "PATCH" : "DELETE";
+  if (!resource.writable) {
+    throw new RestError("SLREST204", {
+      details: `${method} is not available for ${resource.kind} resource ${JSON.stringify(resource.name)}.`,
+      headers: { Allow: READ_ONLY_METHODS },
+    });
+  }
+
+  assertMutationControls(request);
+  if (method === "PATCH") validateRequestMediaType(request.headers);
+  const preferences = parsePreferences(request.headers);
+  const preferenceApplied = getPreferenceApplied(preferences, method);
+  const mediaType = negotiateResponseMediaType(request.headers, "resource");
+  const query = parseRestQuery(
+    request,
+    resource,
+    dependencies.schema,
+    dependencies.queryConfig,
+    dependencies.relationships,
+  );
+  rejectEmbeddedSelection(query);
+  const authorization = await dependencies.authorization.resolve({
+    request,
+    resource,
+    operation: method === "PATCH" ? "update" : "delete",
+    ...(query.filter === undefined ? {} : { clientFilter: query.filter }),
+  });
+  const result =
+    method === "PATCH"
+      ? executeUpdate(
+          dependencies.database,
+          resource,
+          parseUpdatePatch(await request.text(), resource),
+          query,
+          preferences,
+          authorization,
+        )
+      : executeDelete(
+          dependencies.database,
+          resource,
+          query,
+          preferences,
+          authorization,
+        );
+
+  return createMutationResponse({
+    result,
+    query,
+    preferences,
+    mediaType,
+    preferenceApplied,
+    requestId: id,
+    status: preferences.return === "representation" ? 200 : 204,
+  });
+}
+
+/** Creates the scalar-read and transactional-mutation resource handler. */
 export function createResourceRequestHandler(
   dependencies: ResourceRouteDependencies,
 ): (request: Request) => Promise<Response> {
@@ -317,11 +421,19 @@ export function createResourceRequestHandler(
       if (request.method === "POST") {
         return await handleInsert(request, resource, dependencies, id);
       }
+      if (request.method === "PATCH" || request.method === "DELETE") {
+        return await handleFilteredMutation(
+          request,
+          resource,
+          dependencies,
+          id,
+        );
+      }
 
       throw new RestError("SLREST204", {
         details: `Method ${request.method} is not available for resource ${JSON.stringify(resource.name)}.`,
         headers: {
-          Allow: resource.writable ? INSERT_METHODS : READ_ONLY_METHODS,
+          Allow: resource.writable ? WRITE_METHODS : READ_ONLY_METHODS,
         },
       });
     } catch (error) {
