@@ -6,7 +6,8 @@ import { serveRest } from "./server";
 const MISSING_API_KEY_MESSAGE =
   "SETUPLESS_REST_API_KEY is required and must not be blank";
 
-function safeStartupMessage(error: unknown): string {
+/** Returns only canonical public startup failures to the stock CLI log. */
+export function safeStartupMessage(error: unknown): string {
   if (
     error instanceof RestConfigError ||
     (error instanceof Error && error.message === MISSING_API_KEY_MESSAGE)
