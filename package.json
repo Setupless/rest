@@ -15,8 +15,10 @@
     "lint": "biome lint .",
     "start": "bun dist/cli.js",
     "test": "bun test src test/*.test.ts",
-    "test:e2e": "bun run build && bun run build:e2e-fixture && bun test test/e2e",
-    "typecheck": "tsc --noEmit"
+    "test:coverage": "bun test src test/*.test.ts --coverage --randomize --timeout 15000 && bun scripts/check-coverage.ts",
+    "test:e2e": "bun run build && bun run test:e2e:built",
+    "test:e2e:built": "bun run build:e2e-fixture && bun test test/e2e",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.build.json --noEmit"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
