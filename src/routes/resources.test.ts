@@ -253,6 +253,9 @@ describe("scalar resource routes", () => {
     const unsupported = await app().handle(
       request("/record_view", { method: "PUT" }),
     );
+    const unsupportedMethod = await app().handle(
+      request("/records", { method: "PROPFIND" }),
+    );
 
     expect(await errorCode(embedded)).toBe("SLREST103");
     expect(await errorCode(unknown)).toBe("SLREST200");
@@ -261,5 +264,9 @@ describe("scalar resource routes", () => {
     expect(await errorCode(trailing)).toBe("SLREST200");
     expect(unsupported.status).toBe(405);
     expect(unsupported.headers.get("Allow")).toBe("GET, HEAD, OPTIONS");
+    expect(unsupportedMethod.status).toBe(405);
+    expect(unsupportedMethod.headers.get("Allow")).toBe(
+      "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT",
+    );
   });
 });

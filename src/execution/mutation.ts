@@ -2,13 +2,18 @@ import { SQLiteError, type SQLQueryBindings } from "bun:sqlite";
 import type { ResolvedAuthorization } from "../auth/types";
 import type { Database } from "../database/database";
 import { foldSQLiteIdentifier } from "../database/identifier";
-import { type DatabaseResource, hasSQLiteRowid } from "../database/schema";
+import {
+  type DatabaseColumn,
+  type DatabaseResource,
+  hasSQLiteRowid,
+} from "../database/schema";
 import { RestError } from "../http/errors";
 import type { RestPreferences } from "../http/preferences";
 import { getFilterColumn } from "../query/filter";
 import { compileRestFilter } from "../query/filter-compiler";
 import type { RestQuery } from "../query/query";
 import { serializeSQLiteValue } from "../serialization/value";
+import type { InsertPayload, InsertRow } from "../validation/write-payload";
 import { quoteIdentifier } from "./sql";
 
 export type MutationIdentity =
@@ -167,20 +172,36 @@ function serializeSelectedRow(
     if (column === undefined) {
       throw new TypeError("Resolved selection metadata is unavailable");
     }
-    const storageType = row[`${SELECTED_TYPE_PREFIX}${index}`];
-    const rawValue = row[`${SELECTED_VALUE_PREFIX}${index}`];
-    const exactValue =
-      storageType === "integer" && typeof rawValue === "string"
-        ? BigInt(rawValue)
-        : rawValue;
-    selected[selection.alias ?? selection.column] = serializeSQLiteValue(
-      exactValue,
+    selected[selection.alias ?? selection.column] = decodeStoredValue(
+      row,
       column,
       resource.name,
-      typeof storageType === "string" ? storageType : undefined,
+      `${SELECTED_VALUE_PREFIX}${index}`,
+      `${SELECTED_TYPE_PREFIX}${index}`,
     );
   }
   return Object.freeze(selected);
+}
+
+function decodeStoredValue(
+  row: SqlRow,
+  column: DatabaseColumn,
+  resourceName: string,
+  valueKey: string,
+  typeKey: string,
+): unknown {
+  const storageType = row[typeKey];
+  const rawValue = row[valueKey];
+  const exactValue =
+    storageType === "integer" && typeof rawValue === "string"
+      ? BigInt(rawValue)
+      : rawValue;
+  return serializeSQLiteValue(
+    exactValue,
+    column,
+    resourceName,
+    typeof storageType === "string" ? storageType : undefined,
+  );
 }
 
 function serializeCompleteRow(
@@ -191,17 +212,12 @@ function serializeCompleteRow(
   for (let index = 0; index < resource.columns.length; index += 1) {
     const column = resource.columns[index];
     if (column === undefined) continue;
-    const storageType = row[`${COMPLETE_TYPE_PREFIX}${index}`];
-    const rawValue = row[`${COMPLETE_VALUE_PREFIX}${index}`];
-    const exactValue =
-      storageType === "integer" && typeof rawValue === "string"
-        ? BigInt(rawValue)
-        : rawValue;
-    complete[column.name] = serializeSQLiteValue(
-      exactValue,
+    complete[column.name] = decodeStoredValue(
+      row,
       column,
       resource.name,
-      typeof storageType === "string" ? storageType : undefined,
+      `${COMPLETE_VALUE_PREFIX}${index}`,
+      `${COMPLETE_TYPE_PREFIX}${index}`,
     );
   }
   return Object.freeze(complete);
@@ -355,6 +371,41 @@ export function getReturnedIdentity(
   row: SqlRow,
 ): MutationIdentity {
   return parseIdentity(resource, row);
+}
+
+/** @internal Normalizes a validated single or bulk insert payload. */
+export function rowsFromInsertPayload(
+  payload: InsertPayload,
+): readonly InsertRow[] {
+  return Array.isArray(payload)
+    ? payload
+    : Object.freeze([payload as InsertRow]);
+}
+
+/** @internal Inserts one row and returns its stable mutation identity. */
+export function insertMutationRow(
+  database: Database,
+  resource: DatabaseResource,
+  row: InsertRow,
+): MutationIdentity {
+  const columns = Object.keys(row);
+  const values = columns.map((column) => row[column] ?? null);
+  const insertValues =
+    columns.length === 0
+      ? " DEFAULT VALUES"
+      : ` (${columns.map(quoteIdentifier).join(", ")}) VALUES (${columns.map(() => "?").join(", ")})`;
+  const returned = database
+    .query<SqlRow, SQLQueryBindings[]>(
+      `INSERT INTO ${quoteIdentifier(resource.name)}${insertValues} RETURNING ${getReturningIdentitySql(resource)}`,
+    )
+    .get(...values);
+  if (returned === null) {
+    throw new RestError("SLREST406", {
+      details: `Resource ${JSON.stringify(resource.name)} did not return a stable inserted identity.`,
+      hint: "Use a table with an accessible rowid alias or complete primary key.",
+    });
+  }
+  return getReturnedIdentity(resource, returned);
 }
 
 /** Re-reads one UPDATE post-image, enforcing its policy check before commit. */
