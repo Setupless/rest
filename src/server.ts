@@ -8,6 +8,7 @@ import {
   openDatabase,
 } from "./database/database";
 import { loadDatabaseSchema } from "./database/schema";
+import { createJsonLogger, type RestLogger, safeLog } from "./logging/logger";
 
 /** A listening server whose resources can be released exactly once. */
 export interface RunningRestServer {
@@ -19,9 +20,25 @@ export interface RunningRestServer {
 export interface ServeRestOptions {
   config?: RestConfig;
   auth?: RestAuthPlugin;
+  logger?: RestLogger;
 }
 
 const START_FAILURE_MESSAGE = "Setupless/rest failed to start and clean up";
+
+type ShutdownStep = "http" | "wal-persistence" | "wal-checkpoint" | "database";
+
+class RestServerShutdownError extends AggregateError {
+  readonly failedSteps: readonly ShutdownStep[];
+
+  constructor(failures: readonly { step: ShutdownStep; error: unknown }[]) {
+    super(
+      failures.map((failure) => failure.error),
+      "Failed to shut down Setupless/rest cleanly",
+    );
+    this.name = "RestServerShutdownError";
+    this.failedSteps = Object.freeze(failures.map((failure) => failure.step));
+  }
+}
 
 async function cleanupAfterStartFailure(
   error: unknown,
@@ -40,43 +57,36 @@ async function closeServerResources(
   app: ReturnType<typeof createRestApp>,
   database: Database,
 ): Promise<void> {
-  const errors: unknown[] = [];
+  const failures: { step: ShutdownStep; error: unknown }[] = [];
 
   if (app.server !== null) {
     try {
       await app.stop();
     } catch (error) {
-      errors.push(error);
+      failures.push({ step: "http", error });
     }
   }
 
   try {
     database.fileControl(bunSQLiteConstants.SQLITE_FCNTL_PERSIST_WAL, 0);
   } catch (error) {
-    errors.push(error);
+    failures.push({ step: "wal-persistence", error });
   }
 
   try {
     database.run("PRAGMA wal_checkpoint(TRUNCATE);");
   } catch (error) {
-    errors.push(error);
+    failures.push({ step: "wal-checkpoint", error });
   }
 
   try {
     database.close();
   } catch (error) {
-    errors.push(error);
+    failures.push({ step: "database", error });
   }
 
-  if (errors.length === 1) {
-    throw errors[0];
-  }
-
-  if (errors.length > 1) {
-    throw new AggregateError(
-      errors,
-      "Failed to shut down Setupless/rest cleanly",
-    );
+  if (failures.length > 0) {
+    throw new RestServerShutdownError(failures);
   }
 }
 
@@ -85,6 +95,7 @@ export async function serveRest(
   options: ServeRestOptions = {},
 ): Promise<RunningRestServer> {
   const config = options.config ?? loadConfig();
+  const logger = options.logger ?? createJsonLogger(config.logLevel);
   const auth =
     options.auth ??
     (config.apiKey === undefined ? undefined : createApiKeyAuth(config.apiKey));
@@ -110,6 +121,9 @@ export async function serveRest(
       maxFilterDepth: config.maxEmbedDepth,
       maxRows: config.maxRows,
       maxEmbedDepth: config.maxEmbedDepth,
+      maxBodyBytes: config.maxBodyBytes,
+      corsOrigins: config.corsOrigins,
+      logger,
     });
   } catch (error) {
     return cleanupAfterStartFailure(error, () => database.close());
@@ -131,9 +145,19 @@ export async function serveRest(
   const handleSignal = (signal: NodeJS.Signals) => {
     if (stopPromise) return;
 
-    console.log(`Received ${signal}; shutting down Setupless/rest`);
-    void stop().catch((error) => {
-      console.error("Failed to shut down Setupless/rest cleanly", error);
+    safeLog(logger, "info", { event: "server.signal", signal });
+    void stop().catch((error: unknown) => {
+      safeLog(logger, "error", {
+        event: "server.shutdown_failed",
+        reason:
+          error instanceof RestServerShutdownError
+            ? error.message
+            : "Setupless/rest shutdown failed",
+        failedSteps:
+          error instanceof RestServerShutdownError
+            ? error.failedSteps
+            : Object.freeze(["unknown"]),
+      });
       process.exitCode = 1;
     });
   };
@@ -158,7 +182,11 @@ export async function serveRest(
     process.on("SIGINT", onSigint);
     process.on("SIGTERM", onSigterm);
 
-    console.log(`Setupless/rest is running on ${config.host}:${port}`);
+    safeLog(logger, "info", {
+      event: "server.started",
+      host: config.host,
+      port,
+    });
 
     return Object.freeze({ port, stop });
   } catch (error) {

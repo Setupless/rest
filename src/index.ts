@@ -13,6 +13,7 @@ export type {
   RestOperation,
 } from "./auth/types";
 export {
+  DEFAULT_MAX_BODY_BYTES,
   DEFAULT_MAX_EMBED_DEPTH,
   DEFAULT_MAX_ROWS,
   loadConfig,
@@ -89,6 +90,21 @@ export {
   type RestPreferences,
 } from "./http/preferences";
 export {
+  createJsonLogger,
+  NOOP_LOGGER,
+  type RestLogger,
+} from "./logging/logger";
+export {
+  generateOpenApi,
+  type OpenApiOptions,
+} from "./openapi/generate";
+export {
+  createReadColumnSchema,
+  createResourceSchemas,
+  createWriteColumnSchema,
+  type OpenApiObject,
+} from "./openapi/schema";
+export {
   andFilters,
   type CompiledSql,
   DEFAULT_FILTER_MAX_DEPTH,
@@ -109,6 +125,8 @@ export {
   type RestQueryConfig,
   type SelectionNode,
 } from "./query/query";
+export type { HealthResponse, LivenessResponse } from "./routes/health";
+export { createOpenApiRequestHandler } from "./routes/openapi";
 export { serializeSQLiteValue } from "./serialization/value";
 export {
   type RunningRestServer,

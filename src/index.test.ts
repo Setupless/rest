@@ -20,7 +20,10 @@ describe("GET /health", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ status: "ok" });
+    expect(await response.json()).toEqual({
+      status: "ok",
+      database: "ready",
+    });
     expect(Object.isFrozen(fixture.app.decorator.relationships)).toBe(true);
     expect(fixture.app.decorator.authorization.mode).toBe("none");
   });
@@ -96,8 +99,12 @@ describe("library entrypoint", () => {
                 compileRestFilter: typeof api.compileRestFilter,
                 createApiKeyAuth: typeof api.createApiKeyAuth,
                 createAuthorizationResolver: typeof api.createAuthorizationResolver,
+                createOpenApiRequestHandler: typeof api.createOpenApiRequestHandler,
+                createJsonLogger: typeof api.createJsonLogger,
                 createRestApp: typeof api.createRestApp,
+                generateOpenApi: typeof api.generateOpenApi,
                 negotiateResponseMediaType: typeof api.negotiateResponseMediaType,
+                noopLogger: typeof api.NOOP_LOGGER,
                 parseRestFilters: typeof api.parseRestFilters,
                 parsePreferences: typeof api.parsePreferences,
                 parseRestQuery: typeof api.parseRestQuery,
@@ -138,8 +145,12 @@ describe("library entrypoint", () => {
           compileRestFilter: "function",
           createApiKeyAuth: "function",
           createAuthorizationResolver: "function",
+          createOpenApiRequestHandler: "function",
+          createJsonLogger: "function",
           createRestApp: "function",
+          generateOpenApi: "function",
           negotiateResponseMediaType: "function",
+          noopLogger: "object",
           parseRestFilters: "function",
           parsePreferences: "function",
           parseRestQuery: "function",
@@ -190,6 +201,11 @@ describe("stock CLI configuration", () => {
         expect(exitCode).toBe(1);
         expect(stdout).toBe("");
         expect(stderr).toContain("SETUPLESS_REST_API_KEY is required");
+        expect(JSON.parse(stderr)).toMatchObject({
+          level: "error",
+          event: "server.start_failed",
+          message: "SETUPLESS_REST_API_KEY is required and must not be blank",
+        });
         expect(stderr).not.toContain(databasePath);
         expect(existsSync(databasePath)).toBe(false);
       } finally {
@@ -226,7 +242,10 @@ describe("server lifecycle", () => {
       const response = await fetch(`http://localhost:${server.port}/health`);
 
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ status: "ok" });
+      expect(await response.json()).toEqual({
+        status: "ok",
+        database: "ready",
+      });
 
       await Promise.all([server.stop(), server.stop()]);
 

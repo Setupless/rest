@@ -1,0 +1,321 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`generateOpenApi matches the reviewed deterministic document snapshot 1`] = `
+{
+  "authorization": {
+    "credentials": "authorization-bearer",
+    "mode": "api-key",
+    "openapiSecurityAuthoritative": true,
+    "policyBehavior": "Programmatic plugins can deny operations and apply validated using (pre-image) and check (post-image) policies independently for each resource operation.",
+  },
+  "compatibility": {
+    "compatibility": "postgrest-inspired",
+    "database": "sqlite",
+    "deviations": [
+      {
+        "description": "SQLite affinity and runtime storage classes replace PostgreSQL's static wire-type system.",
+        "id": "sqlite-storage",
+      },
+      {
+        "description": "Resources, relationships, routing, and this document are fixed at startup; schema changes require restart.",
+        "id": "startup-schema-snapshot",
+      },
+      {
+        "description": "Relationship hints use ordered SQLite foreign-key source columns because stable constraint names are unavailable.",
+        "id": "relation-hints",
+      },
+      {
+        "description": "Only the filters, preferences, media types, mutations, and relation syntax explicitly documented here are supported.",
+        "id": "supported-subset",
+      },
+    ],
+    "maxEmbedDepth": 5,
+    "maxRows": 1000,
+    "representation": "SQLite storage classes are serialized using the documented lossless Setupless/rest data-representation rules.",
+    "reservedResourceNames": [],
+    "schemaRefresh": "restart-required",
+  },
+  "errorSchemas": [
+    "SLRESTError",
+    "SLREST100",
+    "SLREST101",
+    "SLREST102",
+    "SLREST103",
+    "SLREST104",
+    "SLREST105",
+    "SLREST106",
+    "SLREST107",
+    "SLREST108",
+    "SLREST109",
+    "SLREST110",
+    "SLREST111",
+    "SLREST112",
+    "SLREST113",
+    "SLREST200",
+    "SLREST202",
+    "SLREST203",
+    "SLREST204",
+    "SLREST206",
+    "SLREST207",
+    "SLREST300",
+    "SLREST301",
+    "SLREST302",
+    "SLREST303",
+    "SLREST304",
+    "SLREST305",
+    "SLREST400",
+    "SLREST401",
+    "SLREST402",
+    "SLREST403",
+    "SLREST405",
+    "SLREST406",
+    "SLREST500",
+    "SLREST501",
+    "SLREST502",
+    "SLREST503",
+    "SLREST504",
+  ],
+  "info": {
+    "description": "A deterministic startup snapshot of the Setupless/rest HTTP contract. Schema changes require a process restart before this document or routing changes.",
+    "title": "Contract fixture",
+    "version": "0.1.0-test",
+  },
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "noteSchemas": {
+    "notes": {
+      "additionalProperties": true,
+      "properties": {
+        "archived": {
+          "description": "SQLite declaration: BOOLEAN. Affinity: numeric. Nullable.",
+          "type": [
+            "boolean",
+            "null",
+          ],
+          "x-setupless-generated": false,
+          "x-setupless-writable": true,
+          "x-sqlite-affinity": "numeric",
+          "x-sqlite-declared-type": "BOOLEAN",
+        },
+        "body": {
+          "description": "SQLite declaration: TEXT. Affinity: text. Not null.",
+          "type": "string",
+          "x-setupless-generated": false,
+          "x-setupless-writable": true,
+          "x-sqlite-affinity": "text",
+          "x-sqlite-declared-type": "TEXT",
+        },
+        "id": {
+          "description": "SQLite declaration: INTEGER. Affinity: integer. Not null. Primary-key position 1.",
+          "type": [
+            "number",
+            "string",
+          ],
+          "x-setupless-generated": false,
+          "x-setupless-writable": true,
+          "x-sqlite-affinity": "integer",
+          "x-sqlite-declared-type": "INTEGER",
+        },
+      },
+      "title": "notes",
+      "type": "object",
+      "x-setupless-primary-key": [
+        "id",
+      ],
+      "x-setupless-unique-constraints": [
+        {
+          "columns": [
+            "id",
+          ],
+          "primary": true,
+        },
+      ],
+      "x-sqlite-resource-kind": "table",
+    },
+    "notes.Insert": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "description": "SQLite declaration: BOOLEAN. Affinity: numeric. Nullable.",
+          "type": [
+            "boolean",
+            "null",
+          ],
+          "x-sqlite-affinity": "numeric",
+          "x-sqlite-declared-type": "BOOLEAN",
+        },
+        "body": {
+          "description": "SQLite declaration: TEXT. Affinity: text. Not null.",
+          "type": "string",
+          "x-sqlite-affinity": "text",
+          "x-sqlite-declared-type": "TEXT",
+        },
+        "id": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer",
+            },
+            {
+              "description": "Canonical signed 64-bit decimal string; exact range is enforced at runtime.",
+              "pattern": "^-?(?:0|[1-9][0-9]{0,18})$",
+              "type": "string",
+            },
+          ],
+          "description": "SQLite declaration: INTEGER. Affinity: integer. Not null. Primary-key position 1.",
+          "x-sqlite-affinity": "integer",
+          "x-sqlite-declared-type": "INTEGER",
+        },
+      },
+      "title": "notes insert",
+      "type": "object",
+      "x-setupless-primary-key": [
+        "id",
+      ],
+      "x-setupless-unique-constraints": [
+        {
+          "columns": [
+            "id",
+          ],
+          "primary": true,
+        },
+      ],
+      "x-sqlite-resource-kind": "table",
+    },
+    "notes.Patch": {
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "archived": {
+          "description": "SQLite declaration: BOOLEAN. Affinity: numeric. Nullable.",
+          "type": [
+            "boolean",
+            "null",
+          ],
+          "x-sqlite-affinity": "numeric",
+          "x-sqlite-declared-type": "BOOLEAN",
+        },
+        "body": {
+          "description": "SQLite declaration: TEXT. Affinity: text. Not null.",
+          "type": "string",
+          "x-sqlite-affinity": "text",
+          "x-sqlite-declared-type": "TEXT",
+        },
+        "id": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer",
+            },
+            {
+              "description": "Canonical signed 64-bit decimal string; exact range is enforced at runtime.",
+              "pattern": "^-?(?:0|[1-9][0-9]{0,18})$",
+              "type": "string",
+            },
+          ],
+          "description": "SQLite declaration: INTEGER. Affinity: integer. Not null. Primary-key position 1.",
+          "x-sqlite-affinity": "integer",
+          "x-sqlite-declared-type": "INTEGER",
+        },
+      },
+      "title": "notes patch",
+      "type": "object",
+      "x-setupless-primary-key": [
+        "id",
+      ],
+      "x-setupless-unique-constraints": [
+        {
+          "columns": [
+            "id",
+          ],
+          "primary": true,
+        },
+      ],
+      "x-sqlite-resource-kind": "table",
+    },
+    "notes.Replace": {
+      "additionalProperties": false,
+      "properties": {
+        "archived": {
+          "description": "SQLite declaration: BOOLEAN. Affinity: numeric. Nullable.",
+          "type": [
+            "boolean",
+            "null",
+          ],
+          "x-sqlite-affinity": "numeric",
+          "x-sqlite-declared-type": "BOOLEAN",
+        },
+        "body": {
+          "description": "SQLite declaration: TEXT. Affinity: text. Not null.",
+          "type": "string",
+          "x-sqlite-affinity": "text",
+          "x-sqlite-declared-type": "TEXT",
+        },
+        "id": {
+          "anyOf": [
+            {
+              "maximum": 9007199254740991,
+              "minimum": -9007199254740991,
+              "type": "integer",
+            },
+            {
+              "description": "Canonical signed 64-bit decimal string; exact range is enforced at runtime.",
+              "pattern": "^-?(?:0|[1-9][0-9]{0,18})$",
+              "type": "string",
+            },
+          ],
+          "description": "SQLite declaration: INTEGER. Affinity: integer. Not null. Primary-key position 1.",
+          "x-sqlite-affinity": "integer",
+          "x-sqlite-declared-type": "INTEGER",
+        },
+      },
+      "required": [
+        "id",
+        "body",
+      ],
+      "title": "notes replacement",
+      "type": "object",
+      "x-setupless-primary-key": [
+        "id",
+      ],
+      "x-setupless-unique-constraints": [
+        {
+          "columns": [
+            "id",
+          ],
+          "primary": true,
+        },
+      ],
+      "x-sqlite-resource-kind": "table",
+    },
+  },
+  "openapi": "3.1.0",
+  "pathMethods": {
+    "/": [
+      "get",
+      "head",
+      "options",
+    ],
+    "/health": [
+      "get",
+      "head",
+      "options",
+    ],
+    "/health/live": [
+      "get",
+      "head",
+      "options",
+    ],
+    "/notes": [
+      "get",
+      "head",
+      "options",
+      "post",
+      "patch",
+      "delete",
+      "put",
+    ],
+  },
+}
+`;

@@ -27,12 +27,18 @@ The current prototype can:
   policy enforcement;
 - execute authorized `POST` conflict resolution and equality-targeted `PUT`
   upserts across primary and unconditional unique constraints;
-- serve a health check at `GET /health`.
+- serve deterministic, schema-derived OpenAPI 3.1 JSON at `GET /`;
+- enforce bounded request bodies and exact-origin CORS with validated
+  preflights;
+- attach safe request IDs and emit structured, secret-safe completion logs;
+- expose database-backed readiness at `GET /health` and process liveness at
+  `GET /health/live`; and
+- map SQLite contention to retryable `503` responses while retaining
+  idempotent, checkpointing shutdown.
 
 It does not yet provide:
 
-- generated OpenAPI, CORS, structured logging, or the complete production
-  operations surface; or
+- black-box compatibility coverage or release operations documentation; or
 - a stable API, configuration format, or compatibility guarantees.
 
 There are no releases yet, and breaking changes should be expected.

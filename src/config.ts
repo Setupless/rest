@@ -21,9 +21,15 @@ const LOG_LEVELS = new Set<RestLogLevel>(["debug", "info", "warn", "error"]);
 
 export const DEFAULT_MAX_ROWS = 1000;
 export const DEFAULT_MAX_EMBED_DEPTH = 5;
+export const DEFAULT_MAX_BODY_BYTES = 1_048_576;
+
+/** A configuration failure whose message contains only a public validation rule. */
+export class RestConfigError extends Error {
+  override readonly name = "RestConfigError";
+}
 
 function configError(variable: string, rule: string): Error {
-  return Error(`${variable} ${rule}`);
+  return new RestConfigError(`${variable} ${rule}`);
 }
 
 function parseDatabasePath(value: string | undefined): string {
@@ -164,7 +170,7 @@ export function loadConfig(env: Environment = process.env): RestConfig {
     maxBodyBytes: parseInteger(
       env,
       "MAX_BODY_BYTES",
-      1_048_576,
+      DEFAULT_MAX_BODY_BYTES,
       1,
       1_073_741_824,
     ),

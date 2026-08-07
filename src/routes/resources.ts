@@ -21,7 +21,7 @@ import {
   executeUpsert,
   resolveConflictTarget,
 } from "../execution/upsert";
-import { RestError, toErrorResponse } from "../http/errors";
+import { RestError } from "../http/errors";
 import {
   getResponseContentType,
   negotiateResponseMediaType,
@@ -53,16 +53,8 @@ export interface ResourceRouteDependencies {
   readonly queryConfig: RestQueryConfig;
 }
 
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const READ_ONLY_METHODS = "GET, HEAD, OPTIONS";
 const WRITE_METHODS = "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT";
-
-function requestId(request: Request): string {
-  const supplied = request.headers.get("X-Request-Id");
-  return supplied !== null && REQUEST_ID_PATTERN.test(supplied)
-    ? supplied
-    : crypto.randomUUID();
-}
 
 function resolveResource(
   schema: DatabaseSchema,
@@ -168,10 +160,9 @@ function createMutationResponse(options: {
   readonly preferences: RestPreferences;
   readonly mediaType: RestMediaType;
   readonly preferenceApplied: string | null;
-  readonly requestId: string;
   readonly status: number;
 }): Response {
-  const headers = new Headers({ "X-Request-Id": options.requestId });
+  const headers = new Headers();
   if (options.preferenceApplied !== null) {
     headers.set("Preference-Applied", options.preferenceApplied);
   }
@@ -199,7 +190,6 @@ async function handleRead(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   const method = request.method === "HEAD" ? "HEAD" : "GET";
   const preferences = parsePreferences(request.headers);
@@ -244,7 +234,6 @@ async function handleRead(
     "Content-Range": getContentRange(result),
     "Content-Type": getResponseContentType(mediaType),
     "Range-Unit": "items",
-    "X-Request-Id": id,
   });
   if (preferenceApplied !== null) {
     headers.set("Preference-Applied", preferenceApplied);
@@ -308,7 +297,6 @@ async function handleInsert(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   if (!resource.writable) {
     throw new RestError("SLREST204", {
@@ -396,7 +384,6 @@ async function handleInsert(
     preferences,
     mediaType,
     preferenceApplied,
-    requestId: id,
     status: 201,
   });
   if (preferences.return === "headers-only" && result.location !== null) {
@@ -519,7 +506,6 @@ async function handlePut(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   if (!resource.writable) {
     throw new RestError("SLREST204", {
@@ -593,7 +579,6 @@ async function handlePut(
     preferences,
     mediaType,
     preferenceApplied,
-    requestId: id,
     status: 201,
   });
   if (result.location !== null)
@@ -614,7 +599,6 @@ async function handleFilteredMutation(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   const method = request.method === "PATCH" ? "PATCH" : "DELETE";
   if (!resource.writable) {
@@ -667,7 +651,6 @@ async function handleFilteredMutation(
     preferences,
     mediaType,
     preferenceApplied,
-    requestId: id,
     status: preferences.return === "representation" ? 200 : 204,
   });
 }
@@ -677,50 +660,40 @@ export function createResourceRequestHandler(
   dependencies: ResourceRouteDependencies,
 ): (request: Request) => Promise<Response> {
   return async (request: Request): Promise<Response> => {
-    const id = requestId(request);
-    try {
-      const requestedName = getResourceName(request);
-      const resource = resolveResource(dependencies.schema, requestedName);
-      if (!resource) {
-        throw new RestError("SLREST200", {
-          details: `Resource ${JSON.stringify(requestedName)} was not found.`,
-        });
-      }
-
-      if (request.method === "OPTIONS") {
-        const preferences = parsePreferences(request.headers);
-        getPreferenceApplied(preferences, "OPTIONS");
-        return new Response(null, {
-          status: 204,
-          headers: { Allow: getOptionsAllow(resource), "X-Request-Id": id },
-        });
-      }
-      if (request.method === "GET" || request.method === "HEAD") {
-        return await handleRead(request, resource, dependencies, id);
-      }
-      if (request.method === "POST") {
-        return await handleInsert(request, resource, dependencies, id);
-      }
-      if (request.method === "PUT") {
-        return await handlePut(request, resource, dependencies, id);
-      }
-      if (request.method === "PATCH" || request.method === "DELETE") {
-        return await handleFilteredMutation(
-          request,
-          resource,
-          dependencies,
-          id,
-        );
-      }
-
-      throw new RestError("SLREST204", {
-        details: `Method ${request.method} is not available for resource ${JSON.stringify(resource.name)}.`,
-        headers: {
-          Allow: resource.writable ? WRITE_METHODS : READ_ONLY_METHODS,
-        },
+    const requestedName = getResourceName(request);
+    const resource = resolveResource(dependencies.schema, requestedName);
+    if (!resource) {
+      throw new RestError("SLREST200", {
+        details: `Resource ${JSON.stringify(requestedName)} was not found.`,
       });
-    } catch (error) {
-      return toErrorResponse(error, id);
     }
+
+    if (request.method === "OPTIONS") {
+      const preferences = parsePreferences(request.headers);
+      getPreferenceApplied(preferences, "OPTIONS");
+      return new Response(null, {
+        status: 204,
+        headers: { Allow: getOptionsAllow(resource) },
+      });
+    }
+    if (request.method === "GET" || request.method === "HEAD") {
+      return await handleRead(request, resource, dependencies);
+    }
+    if (request.method === "POST") {
+      return await handleInsert(request, resource, dependencies);
+    }
+    if (request.method === "PUT") {
+      return await handlePut(request, resource, dependencies);
+    }
+    if (request.method === "PATCH" || request.method === "DELETE") {
+      return await handleFilteredMutation(request, resource, dependencies);
+    }
+
+    throw new RestError("SLREST204", {
+      details: `Method ${request.method} is not available for resource ${JSON.stringify(resource.name)}.`,
+      headers: {
+        Allow: resource.writable ? WRITE_METHODS : READ_ONLY_METHODS,
+      },
+    });
   };
 }
