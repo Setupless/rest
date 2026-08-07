@@ -5,9 +5,9 @@ Elysia.
 
 > [!CAUTION]
 > **Setupless/rest is an incomplete, pre-release prototype.** It now exposes
-> scalar SQLite reads, but mutations, embedded relations, and production
-> hardening are not complete. Do not deploy it or rely on it for production
-> workloads.
+> scalar SQLite reads and inserts, but remaining mutations, embedded relations,
+> and production hardening are not complete. Do not deploy it or rely on it for
+> production workloads.
 
 ## Project status
 
@@ -18,11 +18,13 @@ The current prototype can:
   at startup;
 - serve authorized scalar `GET`, `HEAD`, and `OPTIONS` resource routes with
   filtering, projection, ordering, pagination, counts, and singular responses;
+- execute authorized single and bulk `POST` inserts atomically with SQLite
+  defaults, trigger-aware post-images, and every documented return mode;
 - serve a health check at `GET /health`.
 
 It does not yet provide:
 
-- resource mutations or embedded relationship execution;
+- update, delete, or upsert mutations, or embedded relationship execution;
 - generated OpenAPI, CORS, structured logging, or the complete production
   operations surface; or
 - a stable API, configuration format, or compatibility guarantees.

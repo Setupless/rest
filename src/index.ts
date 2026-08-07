@@ -47,6 +47,10 @@ export {
   type SQLiteAffinity,
 } from "./database/schema";
 export {
+  executeInsert,
+  type MutationResult,
+} from "./execution/insert";
+export {
   executeRead,
   type ReadExecutionResult,
 } from "./execution/read";
@@ -98,3 +102,8 @@ export {
   type ServeRestOptions,
   serveRest,
 } from "./server";
+export {
+  type InsertPayload,
+  type InsertRow,
+  parseInsertPayload,
+} from "./validation/write-payload";

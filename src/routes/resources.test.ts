@@ -251,7 +251,7 @@ describe("scalar resource routes", () => {
     const extra = await app().handle(request("/records/1"));
     const trailing = await app().handle(request("/records/"));
     const mutation = await app().handle(
-      request("/records", { method: "POST" }),
+      request("/records", { method: "PATCH" }),
     );
 
     expect(await errorCode(embedded)).toBe("SLREST103");
@@ -260,6 +260,6 @@ describe("scalar resource routes", () => {
     expect(await errorCode(extra)).toBe("SLREST200");
     expect(await errorCode(trailing)).toBe("SLREST200");
     expect(mutation.status).toBe(405);
-    expect(mutation.headers.get("Allow")).toBe("GET, HEAD, OPTIONS");
+    expect(mutation.headers.get("Allow")).toBe("GET, HEAD, OPTIONS, POST");
   });
 });
