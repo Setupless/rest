@@ -512,6 +512,46 @@ export function parseInsertPayload(
   return rows;
 }
 
+/** Parses one PUT object and enforces its complete replacement identity. */
+export function parsePutPayload(
+  source: string,
+  resource: DatabaseResource,
+  missing: "null" | "default",
+): InsertRow {
+  let root: JsonNode;
+  try {
+    root = new JsonPayloadParser(source).parse();
+  } catch (error) {
+    if (error instanceof RestError) throw error;
+    throw invalidJson("The request body contains malformed JSON.");
+  }
+  if (root.kind !== "object") {
+    throw invalidJson("The PUT payload must be exactly one JSON object.");
+  }
+
+  const supplied = new Set<string>();
+  for (const name of root.entries.keys()) {
+    supplied.add(resolveColumn(resource, name).name);
+  }
+  const required = resource.columns
+    .filter(
+      (column) =>
+        column.writable &&
+        (column.primaryKeyPosition !== null ||
+          (!column.nullable && column.defaultValue === null)),
+    )
+    .map((column) => column.name);
+  const missingRequired = required.filter((column) => !supplied.has(column));
+  if (missingRequired.length > 0) {
+    throw new RestError("SLREST112", {
+      details: `PUT must include required columns (${missingRequired.join(", ")}).`,
+      hint: "Include every primary-key and writable non-null column without a default.",
+    });
+  }
+
+  return convertRow(root, resource, missing);
+}
+
 /** Parses and losslessly converts one non-empty HTTP PATCH object. */
 export function parseUpdatePatch(
   source: string,

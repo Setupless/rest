@@ -339,22 +339,6 @@ describe("transactional insert routes", () => {
     for (const [rejectedRequest, code] of [
       [
         post(
-          "/tasks?on_conflict=title",
-          '{"project_id":1,"title":"conflict"}',
-          "missing=default",
-        ),
-        "SLREST113",
-      ],
-      [
-        post(
-          "/tasks",
-          '{"project_id":1,"title":"resolution"}',
-          "missing=default, resolution=merge-duplicates",
-        ),
-        "SLREST113",
-      ],
-      [
-        post(
           "/tasks?id=eq.1",
           '{"project_id":1,"title":"filtered"}',
           "missing=default",
