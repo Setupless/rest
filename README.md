@@ -27,6 +27,7 @@ The current prototype can:
   policy enforcement;
 - execute authorized `POST` conflict resolution and equality-targeted `PUT`
   upserts across primary and unconditional unique constraints;
+- serve deterministic, schema-derived OpenAPI 3.1 JSON at `GET /`;
 - enforce bounded request bodies and exact-origin CORS with validated
   preflights;
 - attach safe request IDs and emit structured, secret-safe completion logs;
@@ -37,8 +38,7 @@ The current prototype can:
 
 It does not yet provide:
 
-- generated OpenAPI, black-box compatibility coverage, or release operations
-  documentation; or
+- black-box compatibility coverage or release operations documentation; or
 - a stable API, configuration format, or compatibility guarantees.
 
 There are no releases yet, and breaking changes should be expected.

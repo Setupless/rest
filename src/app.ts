@@ -11,12 +11,19 @@ import { buildRelationshipGraph } from "./database/relationships";
 import type { DatabaseSchema } from "./database/schema";
 import { createOperationalRequestHandler } from "./http/operations";
 import { NOOP_LOGGER, type RestLogger } from "./logging/logger";
+import { generateOpenApi, type OpenApiOptions } from "./openapi/generate";
 import {
   healthOptionsResponse,
   livenessResponse,
   readinessResponse,
 } from "./routes/health";
+import { createOpenApiRequestHandler } from "./routes/openapi";
 import { createResourceRequestHandler } from "./routes/resources";
+
+const DEFAULT_OPENAPI_INFO = Object.freeze({
+  title: "Setupless/rest",
+  version: "0.1.0",
+});
 
 /** Resources required to construct an app without starting a server. */
 export interface AppDependencies {
@@ -29,6 +36,7 @@ export interface AppDependencies {
   maxBodyBytes?: number;
   corsOrigins?: readonly string[];
   logger?: RestLogger;
+  openApi?: Readonly<Pick<OpenApiOptions, "title" | "version">>;
 }
 
 /** Constructs the Elysia application without opening resources or a port. */
@@ -42,6 +50,7 @@ export function createRestApp({
   maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
   corsOrigins = Object.freeze([]),
   logger = NOOP_LOGGER,
+  openApi = DEFAULT_OPENAPI_INFO,
 }: AppDependencies) {
   const relationships = buildRelationshipGraph(schema);
   const authorization = createAuthorizationResolver(
@@ -55,10 +64,21 @@ export function createRestApp({
     authorization,
     queryConfig: Object.freeze({ maxRows, maxEmbedDepth }),
   });
+  const handleOpenApi = createOpenApiRequestHandler(
+    generateOpenApi({
+      ...openApi,
+      schema,
+      relationships,
+      authorizationMode: authorization.mode,
+      maxRows,
+      maxEmbedDepth,
+    }),
+  );
   const handleOperational = createOperationalRequestHandler(
     { maxBodyBytes, corsOrigins, logger },
     (request, requestId) => {
       const pathname = new URL(request.url).pathname;
+      if (pathname === "/") return handleOpenApi(request, requestId);
       if (pathname === "/health") {
         return request.method === "OPTIONS"
           ? healthOptionsResponse()
@@ -78,6 +98,9 @@ export function createRestApp({
     .decorate("schema", schema)
     .decorate("relationships", relationships)
     .decorate("authorization", authorization)
+    .all("/", ({ request }) => handleOperational(request), {
+      parse: "none",
+    })
     .all("/health", ({ request }) => handleOperational(request), {
       parse: "none",
     })
