@@ -7,13 +7,15 @@
   "type": "module",
   "scripts": {
     "build": "bun build src/cli.ts --target=bun --outdir=dist",
+    "build:e2e-fixture": "bun build test/e2e/auth-server.ts --target=bun --outdir=dist/e2e",
     "check": "biome check .",
     "dev": "bun --watch src/cli.ts",
     "fix": "biome check --write .",
     "format": "biome format --write .",
     "lint": "biome lint .",
     "start": "bun dist/cli.js",
-    "test": "bun test",
+    "test": "bun test src test/*.test.ts",
+    "test:e2e": "bun run build && bun run build:e2e-fixture && bun test test/e2e",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
