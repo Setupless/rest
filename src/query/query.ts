@@ -39,6 +39,8 @@ export interface RestQuery {
   readonly singular: boolean;
 }
 
+export type RestQueryConfig = Pick<RestConfig, "maxRows" | "maxEmbedDepth">;
+
 interface SelectionScope {
   readonly path: string;
   readonly resource: DatabaseResource;
@@ -171,7 +173,7 @@ function assertSelectionControl(
 function buildQuery(
   scope: SelectionScope,
   scopeParameters: ReadonlyMap<string, URLSearchParams>,
-  config: RestConfig,
+  config: RestQueryConfig,
   options: {
     readonly root: boolean;
     readonly headers: Headers;
@@ -242,7 +244,7 @@ export function parseRestQuery(
   request: Request,
   resource: DatabaseResource,
   schema: DatabaseSchema,
-  config: RestConfig,
+  config: RestQueryConfig,
   suppliedRelationships: DatabaseRelationshipGraph | undefined = undefined,
 ): RestQuery {
   if (!Number.isSafeInteger(config.maxRows) || config.maxRows < 1) {

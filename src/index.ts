@@ -13,6 +13,8 @@ export type {
   RestOperation,
 } from "./auth/types";
 export {
+  DEFAULT_MAX_EMBED_DEPTH,
+  DEFAULT_MAX_ROWS,
   loadConfig,
   type RestConfig,
   type RestLogLevel,
@@ -44,6 +46,10 @@ export {
   loadDatabaseSchema,
   type SQLiteAffinity,
 } from "./database/schema";
+export {
+  executeRead,
+  type ReadExecutionResult,
+} from "./execution/read";
 export {
   createRestError,
   REST_ERROR_DEFINITIONS,
@@ -83,8 +89,10 @@ export type { PaginationSource } from "./query/pagination";
 export {
   parseRestQuery,
   type RestQuery,
+  type RestQueryConfig,
   type SelectionNode,
 } from "./query/query";
+export { serializeSQLiteValue } from "./serialization/value";
 export {
   type RunningRestServer,
   type ServeRestOptions,
