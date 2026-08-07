@@ -101,8 +101,13 @@ Run the automated checks before opening a pull request:
 ```sh
 bun run check
 bun run typecheck
-bun test
+bun run test
+bun run test:e2e
 ```
+
+The end-to-end command builds `dist/cli.js`, starts it as an isolated child
+process against temporary on-disk SQLite databases, and verifies the documented
+HTTP and authorization contract over real network requests.
 
 Setupless/rest is inspired by PostgREST but is not affiliated with or endorsed
 by the PostgREST project.
