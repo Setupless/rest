@@ -8,6 +8,7 @@ import {
   openDatabase,
 } from "./database/database";
 import { loadDatabaseSchema } from "./database/schema";
+import { createJsonLogger, type RestLogger } from "./logging/logger";
 
 /** A listening server whose resources can be released exactly once. */
 export interface RunningRestServer {
@@ -19,9 +20,22 @@ export interface RunningRestServer {
 export interface ServeRestOptions {
   config?: RestConfig;
   auth?: RestAuthPlugin;
+  logger?: RestLogger;
 }
 
 const START_FAILURE_MESSAGE = "Setupless/rest failed to start and clean up";
+
+function safeLog(
+  logger: RestLogger,
+  level: "info" | "error",
+  event: Readonly<Record<string, unknown>>,
+): void {
+  try {
+    logger[level](event);
+  } catch {
+    // Logging must not change startup or shutdown behavior.
+  }
+}
 
 async function cleanupAfterStartFailure(
   error: unknown,
@@ -85,6 +99,7 @@ export async function serveRest(
   options: ServeRestOptions = {},
 ): Promise<RunningRestServer> {
   const config = options.config ?? loadConfig();
+  const logger = options.logger ?? createJsonLogger(config.logLevel);
   const auth =
     options.auth ??
     (config.apiKey === undefined ? undefined : createApiKeyAuth(config.apiKey));
@@ -110,6 +125,9 @@ export async function serveRest(
       maxFilterDepth: config.maxEmbedDepth,
       maxRows: config.maxRows,
       maxEmbedDepth: config.maxEmbedDepth,
+      maxBodyBytes: config.maxBodyBytes,
+      corsOrigins: config.corsOrigins,
+      logger,
     });
   } catch (error) {
     return cleanupAfterStartFailure(error, () => database.close());
@@ -131,9 +149,9 @@ export async function serveRest(
   const handleSignal = (signal: NodeJS.Signals) => {
     if (stopPromise) return;
 
-    console.log(`Received ${signal}; shutting down Setupless/rest`);
-    void stop().catch((error) => {
-      console.error("Failed to shut down Setupless/rest cleanly", error);
+    safeLog(logger, "info", { event: "server.signal", signal });
+    void stop().catch(() => {
+      safeLog(logger, "error", { event: "server.shutdown_failed" });
       process.exitCode = 1;
     });
   };
@@ -158,7 +176,11 @@ export async function serveRest(
     process.on("SIGINT", onSigint);
     process.on("SIGTERM", onSigterm);
 
-    console.log(`Setupless/rest is running on ${config.host}:${port}`);
+    safeLog(logger, "info", {
+      event: "server.started",
+      host: config.host,
+      port,
+    });
 
     return Object.freeze({ port, stop });
   } catch (error) {

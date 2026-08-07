@@ -13,6 +13,7 @@ export type {
   RestOperation,
 } from "./auth/types";
 export {
+  DEFAULT_MAX_BODY_BYTES,
   DEFAULT_MAX_EMBED_DEPTH,
   DEFAULT_MAX_ROWS,
   loadConfig,
@@ -88,6 +89,7 @@ export {
   type RestPreferenceName,
   type RestPreferences,
 } from "./http/preferences";
+export type { RestLogger } from "./logging/logger";
 export {
   andFilters,
   type CompiledSql,
@@ -109,6 +111,7 @@ export {
   type RestQueryConfig,
   type SelectionNode,
 } from "./query/query";
+export type { HealthResponse } from "./routes/health";
 export { serializeSQLiteValue } from "./serialization/value";
 export {
   type RunningRestServer,
