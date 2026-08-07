@@ -1,10 +1,21 @@
 import { Elysia } from "elysia";
 import { createAuthorizationResolver } from "./auth/authorize";
 import type { RestAuthPlugin } from "./auth/types";
-import { DEFAULT_MAX_EMBED_DEPTH, DEFAULT_MAX_ROWS } from "./config";
+import {
+  DEFAULT_MAX_BODY_BYTES,
+  DEFAULT_MAX_EMBED_DEPTH,
+  DEFAULT_MAX_ROWS,
+} from "./config";
 import type { Database } from "./database/database";
 import { buildRelationshipGraph } from "./database/relationships";
 import type { DatabaseSchema } from "./database/schema";
+import { createOperationalRequestHandler } from "./http/operations";
+import { NOOP_LOGGER, type RestLogger } from "./logging/logger";
+import {
+  healthOptionsResponse,
+  livenessResponse,
+  readinessResponse,
+} from "./routes/health";
 import { createResourceRequestHandler } from "./routes/resources";
 
 /** Resources required to construct an app without starting a server. */
@@ -15,6 +26,9 @@ export interface AppDependencies {
   maxFilterDepth?: number;
   maxRows?: number;
   maxEmbedDepth?: number;
+  maxBodyBytes?: number;
+  corsOrigins?: readonly string[];
+  logger?: RestLogger;
 }
 
 /** Constructs the Elysia application without opening resources or a port. */
@@ -25,6 +39,9 @@ export function createRestApp({
   maxFilterDepth,
   maxRows = DEFAULT_MAX_ROWS,
   maxEmbedDepth = DEFAULT_MAX_EMBED_DEPTH,
+  maxBodyBytes = DEFAULT_MAX_BODY_BYTES,
+  corsOrigins = Object.freeze([]),
+  logger = NOOP_LOGGER,
 }: AppDependencies) {
   const relationships = buildRelationshipGraph(schema);
   const authorization = createAuthorizationResolver(
@@ -38,15 +55,39 @@ export function createRestApp({
     authorization,
     queryConfig: Object.freeze({ maxRows, maxEmbedDepth }),
   });
+  const handleOperational = createOperationalRequestHandler(
+    { maxBodyBytes, corsOrigins, logger },
+    (request, requestId) => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname === "/health") {
+        return request.method === "OPTIONS"
+          ? healthOptionsResponse()
+          : readinessResponse(request, database);
+      }
+      if (pathname === "/health/live") {
+        return request.method === "OPTIONS"
+          ? healthOptionsResponse()
+          : livenessResponse(request);
+      }
+      return handleResource(request, requestId);
+    },
+  );
 
   return new Elysia()
     .decorate("database", database)
     .decorate("schema", schema)
     .decorate("relationships", relationships)
     .decorate("authorization", authorization)
-    .get("/health", () => ({
-      status: "ok",
-    }))
-    .all("/:resource", ({ request }) => handleResource(request))
-    .all("/*", ({ request }) => handleResource(request));
+    .all("/health", ({ request }) => handleOperational(request), {
+      parse: "none",
+    })
+    .all("/health/live", ({ request }) => handleOperational(request), {
+      parse: "none",
+    })
+    .all("/:resource", ({ request }) => handleOperational(request), {
+      parse: "none",
+    })
+    .all("/*", ({ request }) => handleOperational(request), {
+      parse: "none",
+    });
 }

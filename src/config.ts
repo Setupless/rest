@@ -21,6 +21,7 @@ const LOG_LEVELS = new Set<RestLogLevel>(["debug", "info", "warn", "error"]);
 
 export const DEFAULT_MAX_ROWS = 1000;
 export const DEFAULT_MAX_EMBED_DEPTH = 5;
+export const DEFAULT_MAX_BODY_BYTES = 1_048_576;
 
 function configError(variable: string, rule: string): Error {
   return Error(`${variable} ${rule}`);
@@ -164,7 +165,7 @@ export function loadConfig(env: Environment = process.env): RestConfig {
     maxBodyBytes: parseInteger(
       env,
       "MAX_BODY_BYTES",
-      1_048_576,
+      DEFAULT_MAX_BODY_BYTES,
       1,
       1_073_741_824,
     ),
