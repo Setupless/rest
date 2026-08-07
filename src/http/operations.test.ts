@@ -115,7 +115,44 @@ describe("operational HTTP behavior", () => {
       "Authorization, Content-Type, Prefer",
     );
     expect(await errorCode(deniedMethod)).toBe("SLREST305");
+    expect(deniedMethod.status).toBe(403);
+    expect(deniedMethod.headers.get("Access-Control-Allow-Origin")).toBeNull();
     expect(await errorCode(deniedHeader)).toBe("SLREST305");
+    expect(deniedHeader.status).toBe(403);
+    expect(deniedHeader.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
+  it("preserves non-CORS failures on allowed preflight requests", async () => {
+    const events: Readonly<Record<string, unknown>>[] = [];
+    const logger: RestLogger = {
+      debug: () => {},
+      info: (event) => events.push(event),
+      warn: () => {},
+      error: () => {},
+    };
+    const response = await app({
+      corsOrigins: ["https://app.example"],
+      logger,
+    }).handle(
+      request("/missing", {
+        method: "OPTIONS",
+        headers: {
+          Origin: "https://app.example",
+          "Access-Control-Request-Method": "GET",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await errorCode(response)).toBe("SLREST200");
+    expect(response.headers.get("Access-Control-Allow-Origin")).toBe(
+      "https://app.example",
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      status: 404,
+      errorCode: "SLREST200",
+    });
   });
 
   it("echoes valid request IDs and replaces invalid IDs on every response", async () => {

@@ -28,6 +28,7 @@ describe("health routes", () => {
     expect(readiness.status).toBe(503);
     expect(await errorCode(readiness)).toBe("SLREST503");
     expect(liveness.status).toBe(200);
+    expect(liveness.headers.get("Cache-Control")).toBe("no-store");
     expect(await liveness.json()).toEqual({ status: "ok" });
   });
 

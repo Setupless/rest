@@ -160,10 +160,9 @@ function createMutationResponse(options: {
   readonly preferences: RestPreferences;
   readonly mediaType: RestMediaType;
   readonly preferenceApplied: string | null;
-  readonly requestId: string;
   readonly status: number;
 }): Response {
-  const headers = new Headers({ "X-Request-Id": options.requestId });
+  const headers = new Headers();
   if (options.preferenceApplied !== null) {
     headers.set("Preference-Applied", options.preferenceApplied);
   }
@@ -191,7 +190,6 @@ async function handleRead(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   const method = request.method === "HEAD" ? "HEAD" : "GET";
   const preferences = parsePreferences(request.headers);
@@ -236,7 +234,6 @@ async function handleRead(
     "Content-Range": getContentRange(result),
     "Content-Type": getResponseContentType(mediaType),
     "Range-Unit": "items",
-    "X-Request-Id": id,
   });
   if (preferenceApplied !== null) {
     headers.set("Preference-Applied", preferenceApplied);
@@ -300,7 +297,6 @@ async function handleInsert(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   if (!resource.writable) {
     throw new RestError("SLREST204", {
@@ -388,7 +384,6 @@ async function handleInsert(
     preferences,
     mediaType,
     preferenceApplied,
-    requestId: id,
     status: 201,
   });
   if (preferences.return === "headers-only" && result.location !== null) {
@@ -511,7 +506,6 @@ async function handlePut(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   if (!resource.writable) {
     throw new RestError("SLREST204", {
@@ -585,7 +579,6 @@ async function handlePut(
     preferences,
     mediaType,
     preferenceApplied,
-    requestId: id,
     status: 201,
   });
   if (result.location !== null)
@@ -606,7 +599,6 @@ async function handleFilteredMutation(
   request: Request,
   resource: DatabaseResource,
   dependencies: ResourceRouteDependencies,
-  id: string,
 ): Promise<Response> {
   const method = request.method === "PATCH" ? "PATCH" : "DELETE";
   if (!resource.writable) {
@@ -659,7 +651,6 @@ async function handleFilteredMutation(
     preferences,
     mediaType,
     preferenceApplied,
-    requestId: id,
     status: preferences.return === "representation" ? 200 : 204,
   });
 }
@@ -667,8 +658,8 @@ async function handleFilteredMutation(
 /** Creates the scalar-read and transactional-mutation resource handler. */
 export function createResourceRequestHandler(
   dependencies: ResourceRouteDependencies,
-): (request: Request, requestId: string) => Promise<Response> {
-  return async (request: Request, requestId: string): Promise<Response> => {
+): (request: Request) => Promise<Response> {
+  return async (request: Request): Promise<Response> => {
     const requestedName = getResourceName(request);
     const resource = resolveResource(dependencies.schema, requestedName);
     if (!resource) {
@@ -682,28 +673,20 @@ export function createResourceRequestHandler(
       getPreferenceApplied(preferences, "OPTIONS");
       return new Response(null, {
         status: 204,
-        headers: {
-          Allow: getOptionsAllow(resource),
-          "X-Request-Id": requestId,
-        },
+        headers: { Allow: getOptionsAllow(resource) },
       });
     }
     if (request.method === "GET" || request.method === "HEAD") {
-      return await handleRead(request, resource, dependencies, requestId);
+      return await handleRead(request, resource, dependencies);
     }
     if (request.method === "POST") {
-      return await handleInsert(request, resource, dependencies, requestId);
+      return await handleInsert(request, resource, dependencies);
     }
     if (request.method === "PUT") {
-      return await handlePut(request, resource, dependencies, requestId);
+      return await handlePut(request, resource, dependencies);
     }
     if (request.method === "PATCH" || request.method === "DELETE") {
-      return await handleFilteredMutation(
-        request,
-        resource,
-        dependencies,
-        requestId,
-      );
+      return await handleFilteredMutation(request, resource, dependencies);
     }
 
     throw new RestError("SLREST204", {

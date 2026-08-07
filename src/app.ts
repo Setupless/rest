@@ -89,7 +89,7 @@ export function createRestApp({
           ? healthOptionsResponse()
           : livenessResponse(request);
       }
-      return handleResource(request, requestId);
+      return handleResource(request);
     },
   );
 

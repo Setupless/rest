@@ -15,6 +15,7 @@ describe("limitRequestBody", () => {
       status: 413,
       details: "The request body exceeds the configured limit of 10 bytes.",
     });
+    expect(await request.text()).toBe("{}");
   });
 
   it("bounds streamed bodies whose length is not declared", async () => {
