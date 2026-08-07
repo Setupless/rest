@@ -2,11 +2,13 @@ import type { RestAuthorizationResolver } from "../auth/types";
 import type { Database } from "../database/database";
 import type { DatabaseRelationshipGraph } from "../database/relationships";
 import type { DatabaseResource, DatabaseSchema } from "../database/schema";
+import { executeInsert } from "../execution/insert";
 import { executeRead, type ReadExecutionResult } from "../execution/read";
 import { RestError, toErrorResponse } from "../http/errors";
 import {
   getResponseContentType,
   negotiateResponseMediaType,
+  validateRequestMediaType,
 } from "../http/media-type";
 import { getPreferenceApplied, parsePreferences } from "../http/preferences";
 import {
@@ -14,6 +16,7 @@ import {
   type RestQuery,
   type RestQueryConfig,
 } from "../query/query";
+import { parseInsertPayload } from "../validation/write-payload";
 
 export interface ResourceRouteDependencies {
   readonly database: Database;
@@ -25,6 +28,7 @@ export interface ResourceRouteDependencies {
 
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const READ_ONLY_METHODS = "GET, HEAD, OPTIONS";
+const INSERT_METHODS = "GET, HEAD, OPTIONS, POST";
 const WRITABLE_METHODS = "GET, HEAD, OPTIONS, POST, PATCH, DELETE, PUT";
 
 function requestId(request: Request): string {
@@ -185,7 +189,112 @@ async function handleRead(
   });
 }
 
-/** Creates the complete scalar resource-route request handler. */
+function assertInsertControls(request: Request): void {
+  const url = new URL(request.url);
+  if (url.searchParams.has("on_conflict")) {
+    throw new RestError("SLREST113", {
+      details: "Conflict targets are not available for plain inserts.",
+      hint: "Remove on_conflict until conflict resolution is enabled.",
+    });
+  }
+  const unsupported = [...url.searchParams.keys()].find(
+    (name) => name !== "select",
+  );
+  if (
+    unsupported !== undefined ||
+    request.headers.has("Range") ||
+    request.headers.has("Range-Unit")
+  ) {
+    throw new RestError("SLREST103", {
+      details: "POST insert accepts only the select query control.",
+      hint: "Remove filters, ordering, and pagination from the insert request.",
+    });
+  }
+}
+
+async function handleInsert(
+  request: Request,
+  resource: DatabaseResource,
+  dependencies: ResourceRouteDependencies,
+  id: string,
+): Promise<Response> {
+  if (!resource.writable) {
+    throw new RestError("SLREST204", {
+      details: `POST is not available for ${resource.kind} resource ${JSON.stringify(resource.name)}.`,
+      headers: { Allow: READ_ONLY_METHODS },
+    });
+  }
+
+  assertInsertControls(request);
+  validateRequestMediaType(request.headers);
+  const preferences = parsePreferences(request.headers);
+  if (preferences.resolution !== undefined) {
+    throw new RestError("SLREST113", {
+      details: "Conflict resolution is not available for plain inserts.",
+      hint: "Remove the resolution preference until POST upsert is enabled.",
+    });
+  }
+  const preferenceApplied = getPreferenceApplied(preferences, "POST");
+  const mediaType = negotiateResponseMediaType(request.headers, "resource");
+  const query = parseRestQuery(
+    request,
+    resource,
+    dependencies.schema,
+    dependencies.queryConfig,
+    dependencies.relationships,
+  );
+  rejectEmbeddedSelection(query);
+  const authorization = await dependencies.authorization.resolve({
+    request,
+    resource,
+    operation: "insert",
+  });
+  const payload = parseInsertPayload(
+    await request.text(),
+    resource,
+    preferences.missing,
+  );
+  const payloadCount = Array.isArray(payload) ? payload.length : 1;
+  if (query.singular && payloadCount !== 1) {
+    throw new RestError("SLREST106", {
+      details: "A singular insert representation requires exactly one row.",
+      hint: "Send one object or request the default JSON array media type.",
+    });
+  }
+  const result = executeInsert(
+    dependencies.database,
+    resource,
+    payload,
+    query,
+    preferences,
+    authorization,
+  );
+  const headers = new Headers({ "X-Request-Id": id });
+  if (preferenceApplied !== null) {
+    headers.set("Preference-Applied", preferenceApplied);
+  }
+  if (preferences.count === "exact") {
+    headers.set("Range-Unit", "items");
+    headers.set(
+      "Content-Range",
+      result.affected === 0
+        ? "*/0"
+        : `0-${result.affected - 1}/${result.affected}`,
+    );
+  }
+  if (preferences.return === "headers-only" && result.location !== null) {
+    headers.set("Location", result.location);
+  }
+
+  let body: string | null = null;
+  if (preferences.return === "representation") {
+    headers.set("Content-Type", getResponseContentType(mediaType));
+    body = jsonBody(query.singular ? result.rows[0] : result.rows);
+  }
+  return new Response(body, { status: 201, headers });
+}
+
+/** Creates the scalar-read and transactional-insert resource handler. */
 export function createResourceRequestHandler(
   dependencies: ResourceRouteDependencies,
 ): (request: Request) => Promise<Response> {
@@ -211,10 +320,15 @@ export function createResourceRequestHandler(
       if (request.method === "GET" || request.method === "HEAD") {
         return await handleRead(request, resource, dependencies, id);
       }
+      if (request.method === "POST") {
+        return await handleInsert(request, resource, dependencies, id);
+      }
 
       throw new RestError("SLREST204", {
         details: `Method ${request.method} is not available for resource ${JSON.stringify(resource.name)}.`,
-        headers: { Allow: READ_ONLY_METHODS },
+        headers: {
+          Allow: resource.writable ? INSERT_METHODS : READ_ONLY_METHODS,
+        },
       });
     } catch (error) {
       return toErrorResponse(error, id);
