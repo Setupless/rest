@@ -1,3 +1,4 @@
+import { foldSQLiteIdentifier } from "../database/identifier";
 import type { DatabaseRelationshipGraph } from "../database/relationships";
 import type { DatabaseResource, DatabaseSchema } from "../database/schema";
 import { RestError } from "../http/errors";
@@ -46,12 +47,6 @@ function reserveSelectionNode(budget: SelectionBudget): void {
       `select accepts at most ${MAX_SELECTION_NODES} projected nodes.`,
     );
   }
-}
-
-function foldSQLiteIdentifier(identifier: string): string {
-  return identifier.replace(/[A-Z]/g, (character) =>
-    String.fromCharCode(character.charCodeAt(0) + 32),
-  );
 }
 
 function getResource(

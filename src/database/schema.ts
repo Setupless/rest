@@ -1,4 +1,5 @@
 import type { Database } from "./database";
+import { foldSQLiteIdentifier } from "./identifier";
 
 export type SQLiteAffinity = "integer" | "real" | "text" | "blob" | "numeric";
 
@@ -135,12 +136,6 @@ function compareStringArrays(
   }
 
   return left.length - right.length;
-}
-
-function foldSQLiteIdentifier(identifier: string): string {
-  return identifier.replace(/[A-Z]/g, (character) =>
-    String.fromCharCode(character.charCodeAt(0) + 32),
-  );
 }
 
 function loadUniqueConstraints(

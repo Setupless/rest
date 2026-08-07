@@ -1,4 +1,5 @@
 import type { SQLQueryBindings } from "bun:sqlite";
+import { foldSQLiteIdentifier } from "../database/identifier";
 import type { DatabaseColumn, DatabaseResource } from "../database/schema";
 import { RestError } from "../http/errors";
 
@@ -23,7 +24,7 @@ interface NormalizedDecimal {
 }
 
 const JSON_NUMBER_PATTERN =
-  /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/;
+  /-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/y;
 const INTEGER_PATTERN = /^(?:0|-[1-9][0-9]*|[1-9][0-9]*)$/;
 const SQLITE_NUMERIC_PREFIX_PATTERN =
   /^[\t\n\v\f\r ]*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?/;
@@ -90,7 +91,8 @@ class JsonPayloadParser {
       return { kind: "null" };
     }
 
-    const number = JSON_NUMBER_PATTERN.exec(this.source.slice(this.index))?.[0];
+    JSON_NUMBER_PATTERN.lastIndex = this.index;
+    const number = JSON_NUMBER_PATTERN.exec(this.source)?.[0];
     if (number !== undefined) {
       this.index += number.length;
       return { kind: "number", source: number };
@@ -144,6 +146,12 @@ class JsonPayloadParser {
       }
       this.index += 1;
       this.skipWhitespace();
+      if (entries.has(key)) {
+        throw invalidJson(
+          `JSON object key ${JSON.stringify(key)} is specified more than once.`,
+          "Use each key at most once per object.",
+        );
+      }
       entries.set(key, this.parseValue(depth));
       this.skipWhitespace();
 
@@ -389,12 +397,6 @@ function convertValue(
     column,
     "a lossless number, signed 64-bit decimal string, or retained text",
     "Use a TEXT-declared column for numeric-looking text that SQLite would coerce.",
-  );
-}
-
-function foldSQLiteIdentifier(identifier: string): string {
-  return identifier.replace(/[A-Z]/g, (character) =>
-    String.fromCharCode(character.charCodeAt(0) + 32),
   );
 }
 

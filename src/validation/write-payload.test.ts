@@ -1,8 +1,24 @@
 import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { type DatabaseResource, loadDatabaseSchema } from "../database/schema";
-import { RestError } from "../http/errors";
+import { RestError, type RestErrorCode } from "../http/errors";
 import { parseInsertPayload } from "./write-payload";
+
+function expectRestErrorCode(
+  source: string,
+  resource: DatabaseResource,
+  missing: "null" | "default",
+  code: RestErrorCode,
+): void {
+  let thrown: unknown;
+  try {
+    parseInsertPayload(source, resource, missing);
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(RestError);
+  expect((thrown as RestError).code).toBe(code);
+}
 
 const SCHEMA = `
   CREATE TABLE values_example (
@@ -70,14 +86,7 @@ describe("write payload validation", () => {
       '{"payload":{"n":9007199254740993}}',
       '{"amount":1e309}',
     ]) {
-      expect(() => parseInsertPayload(source, resource, "default")).toThrow(
-        RestError,
-      );
-      try {
-        parseInsertPayload(source, resource, "default");
-      } catch (error) {
-        expect((error as RestError).code).toBe("SLREST403");
-      }
+      expectRestErrorCode(source, resource, "default", "SLREST403");
     }
   });
 
@@ -110,13 +119,13 @@ describe("write payload validation", () => {
 
   it("rejects invalid top-level shapes, bulk members, and malformed JSON", () => {
     for (const source of ["null", "1", '"value"', "[]", "[{} , null]", "{"]) {
-      try {
-        parseInsertPayload(source, resource, "default");
-        throw new Error("expected payload failure");
-      } catch (error) {
-        expect((error as RestError).code).toBe("SLREST107");
-      }
+      expectRestErrorCode(source, resource, "default", "SLREST107");
     }
+  });
+
+  it("rejects JSON beyond the supported nesting depth", () => {
+    const source = `{"payload":${"[".repeat(200)}1${"]".repeat(200)}}`;
+    expectRestErrorCode(source, resource, "default", "SLREST107");
   });
 
   it("resolves columns case-insensitively and rejects unknown or generated writes", () => {
@@ -126,14 +135,10 @@ describe("write payload validation", () => {
     for (const [source, code] of [
       ['{"missing":1}', "SLREST101"],
       ['{"generated":"value"}', "SLREST206"],
+      ['{"label":"one","label":"two"}', "SLREST107"],
       ['{"label":"one","LABEL":"two"}', "SLREST107"],
     ] as const) {
-      try {
-        parseInsertPayload(source, resource, "default");
-        throw new Error("expected column failure");
-      } catch (error) {
-        expect((error as RestError).code).toBe(code);
-      }
+      expectRestErrorCode(source, resource, "default", code);
     }
   });
 });

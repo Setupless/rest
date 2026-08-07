@@ -99,7 +99,7 @@ describe("transactional insert routes", () => {
   it("inserts one row with defaults and returns its trigger-aware post-image", async () => {
     const response = await app().handle(
       post(
-        "/tasks?select=id,title,priority,normalized,generated",
+        "/tasks?select=id:ID,title:TITLE,priority:PRIORITY,normalized:NORMALIZED,generated:GENERATED",
         '{"project_id":1,"title":"first"}',
         "missing=default, return=representation",
       ),
@@ -335,5 +335,52 @@ describe("transactional insert routes", () => {
     expect(media.status).toBe(415);
     expect(await errorCode(media)).toBe("SLREST105");
     expect(taskCount()).toBe(0);
+
+    for (const [rejectedRequest, code] of [
+      [
+        post(
+          "/tasks?on_conflict=title",
+          '{"project_id":1,"title":"conflict"}',
+          "missing=default",
+        ),
+        "SLREST113",
+      ],
+      [
+        post(
+          "/tasks",
+          '{"project_id":1,"title":"resolution"}',
+          "missing=default, resolution=merge-duplicates",
+        ),
+        "SLREST113",
+      ],
+      [
+        post(
+          "/tasks?id=eq.1",
+          '{"project_id":1,"title":"filtered"}',
+          "missing=default",
+        ),
+        "SLREST103",
+      ],
+      [
+        post("/tasks", '{"project_id":1,"title":"ranged"}', "missing=default", {
+          Range: "0-0",
+          "Range-Unit": "items",
+        }),
+        "SLREST103",
+      ],
+      [
+        post(
+          "/tasks",
+          '[{"project_id":1,"title":"one"},{"project_id":1,"title":"two"}]',
+          "missing=default",
+          { Accept: "application/vnd.pgrst.object+json" },
+        ),
+        "SLREST106",
+      ],
+    ] as const) {
+      const response = await app().handle(rejectedRequest);
+      expect(await errorCode(response)).toBe(code);
+      expect(taskCount()).toBe(0);
+    }
   });
 });
